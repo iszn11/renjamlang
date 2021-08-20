@@ -1,0 +1,23 @@
+// computes greates common divisor
+fn gcd a b
+
+  while != a b
+
+    // check if $a > $b
+    if > a b
+      // decrease a=$a by $b
+      = a - a b
+    else
+      // decrease b=$b by $a
+      = b - b a
+    end
+
+  end
+
+  // the result is $a
+  return a
+end
+
+gcd (105 30)
+gcd (7 9)
+gcd (* 11 13 * 11 53)
