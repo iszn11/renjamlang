@@ -112,4 +112,4 @@ struct CommentExpressionNode : public CommentNode {
 	CommentExpressionNode(std::vector<std::unique_ptr<Token>> tokens) : CommentNode{CommentNodeTag::Expression}, tokens{std::move(tokens)} {}
 };
 
-Error Lex(const char* code, std::vector<std::unique_ptr<Token>>& tokens);
+[[nodiscard]] Error Lex(const char* code, std::vector<std::unique_ptr<Token>>& tokens);

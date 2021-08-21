@@ -9,14 +9,6 @@
 #include <utility>
 #include <vector>
 
-enum class TypeTag {
-	Void,
-	Bool,
-	Number,
-	Array,
-	Function,
-};
-
 enum class ExpressionTag {
 	False,           // Expression
 	True,            // Expression
@@ -30,31 +22,6 @@ enum class ExpressionTag {
 
 	Call,            // Call
 };
-
-/*enum class UnaryOp {
-	Not,
-	Negate,
-	Void,
-	ArrayLength,
-};
-
-enum class BinaryOp {
-	Add,
-	Sub,
-	Mul,
-	Div,
-	Mod,
-	And,
-	Or,
-	Xor,
-	LessThan,
-	GreaterThan,
-	LessEquals,
-	GreaterEquals,
-	EqualsEquals,
-	NotEquals,
-	ArrayRead,
-};*/
 
 enum class StatementTag {
 	If,         // IfStatement
@@ -198,4 +165,4 @@ struct ExpressionStatement : public Statement {
 
 struct Token;
 
-Error Parse(std::vector<std::unique_ptr<Token>>& tokens, std::vector<std::unique_ptr<Statement>>& statements);
+[[nodiscard]] Error Parse(std::vector<std::unique_ptr<Token>>& tokens, std::vector<std::unique_ptr<Statement>>& statements);

@@ -9,7 +9,7 @@
   while <= * i i n
     if == @ A i 1
       = j * i i
-      while < j n
+      while <= j n
         = @ A j 0
         = j + j i
       end
@@ -19,9 +19,10 @@
   = out []
   = i 2
   while <= i n
-    if = @ A i 1 push out i end
+    if == @ A i 1 push out i end
     = i + i 1
   end
+  return out
 end
 
-sieve (100)
+sieve (1000)

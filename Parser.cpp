@@ -14,19 +14,19 @@ static bool IsToken(const TokenTag tag);
 static TokenTag GetTag();
 static CodePos GetPos();
 
-static Error ParseExpression(std::unique_ptr<Expression>& out);
-static Error ParseExpressionInternal(std::unique_ptr<Expression>& out);
+[[nodiscard]] static Error ParseExpression(std::unique_ptr<Expression>& out);
+[[nodiscard]] static Error ParseExpressionInternal(std::unique_ptr<Expression>& out);
 
-static Error ParseStatement(Statements& statements);
-static Error ParseIf(Statements& statements);
-static Error ParseWhile(Statements& statements);
-static Error ParseAssignment(Statements& statements);
-static Error ParseArrayPush(Statements& statements);
-static Error ParseArrayPop(Statements& statements);
-static Error ParseReturn(Statements& statements);
-static Error ParseExpressionStatement(Statements& statements);
+[[nodiscard]] static Error ParseStatement(Statements& statements);
+[[nodiscard]] static Error ParseIf(Statements& statements);
+[[nodiscard]] static Error ParseWhile(Statements& statements);
+[[nodiscard]] static Error ParseAssignment(Statements& statements);
+[[nodiscard]] static Error ParseArrayPush(Statements& statements);
+[[nodiscard]] static Error ParseArrayPop(Statements& statements);
+[[nodiscard]] static Error ParseReturn(Statements& statements);
+[[nodiscard]] static Error ParseExpressionStatement(Statements& statements);
 
-Error Parse(std::vector<std::unique_ptr<Token>>& tokens, Statements& statements)
+[[nodiscard]] Error Parse(std::vector<std::unique_ptr<Token>>& tokens, Statements& statements)
 {
 	tokenPtr = &tokens.front();
 	tokenEnd = &tokens.back();
@@ -75,7 +75,7 @@ static CodePos GetPos()
 	return (*tokenPtr)->pos;
 }
 
-static Error ParseExpression(std::unique_ptr<Expression>& out)
+[[nodiscard]] static Error ParseExpression(std::unique_ptr<Expression>& out)
 {
 	const CodePos pos = GetPos();
 
@@ -101,7 +101,7 @@ static Error ParseExpression(std::unique_ptr<Expression>& out)
 	return Error::None;
 }
 
-static Error ParseExpressionInternal(std::unique_ptr<Expression>& out)
+[[nodiscard]] static Error ParseExpressionInternal(std::unique_ptr<Expression>& out)
 {
 	const CodePos pos = GetPos();
 	const TokenTag tag = GetTag();
@@ -219,7 +219,7 @@ static Error ParseExpressionInternal(std::unique_ptr<Expression>& out)
 	}
 }
 
-static Error ParseStatement(Statements& statements)
+[[nodiscard]] static Error ParseStatement(Statements& statements)
 {
 	Error error = ParseIf(statements);
 	if (error || success) return error;
@@ -246,7 +246,7 @@ static Error ParseStatement(Statements& statements)
 	return Error::None;
 }
 
-static Error ParseIf(Statements& statements)
+[[nodiscard]] static Error ParseIf(Statements& statements)
 {
 	const CodePos pos = GetPos();
 
@@ -272,14 +272,22 @@ static Error ParseIf(Statements& statements)
 
 		elifChain.emplace_back(std::move(condition), std::move(innerStatements));
 
-		if (IsToken(TokenTag::KeyElif)) { tokenPtr += 1; continue; }
-		if (IsToken(TokenTag::KeyEnd)) { tokenPtr += 1; break; }
+		if (IsToken(TokenTag::KeyElse))
+		{
+			tokenPtr += 1;
+			while (!EatToken(TokenTag::KeyEnd))
+			{
+				TRY(ParseStatement(elseBlock));
+			}
+			break;
+		}
+		if (IsToken(TokenTag::KeyEnd))
+		{
+			tokenPtr += 1;
+			break;
+		}
 
 		tokenPtr += 1;
-		while (!EatToken(TokenTag::KeyEnd))
-		{
-			TRY(ParseStatement(elseBlock));
-		}
 	}
 
 	success = true;
@@ -287,7 +295,7 @@ static Error ParseIf(Statements& statements)
 	return Error::None;
 }
 
-static Error ParseWhile(Statements& statements)
+[[nodiscard]] static Error ParseWhile(Statements& statements)
 {
 	const CodePos pos = GetPos();
 
@@ -311,7 +319,7 @@ static Error ParseWhile(Statements& statements)
 	return Error::None;
 }
 
-static Error ParseAssignment(Statements& statements)
+[[nodiscard]] static Error ParseAssignment(Statements& statements)
 {
 	const CodePos pos = GetPos();
 
@@ -362,7 +370,7 @@ static Error ParseAssignment(Statements& statements)
 	}
 }
 
-static Error ParseArrayPush(Statements& statements)
+[[nodiscard]] static Error ParseArrayPush(Statements& statements)
 {
 	const CodePos pos = GetPos();
 
@@ -387,7 +395,7 @@ static Error ParseArrayPush(Statements& statements)
 	return Error::None;
 }
 
-static Error ParseArrayPop(Statements& statements)
+[[nodiscard]] static Error ParseArrayPop(Statements& statements)
 {
 	const CodePos pos = GetPos();
 
@@ -409,7 +417,7 @@ static Error ParseArrayPop(Statements& statements)
 	return Error::None;
 }
 
-static Error ParseReturn(Statements& statements)
+[[nodiscard]] static Error ParseReturn(Statements& statements)
 {
 	const CodePos pos = GetPos();
 
@@ -427,7 +435,7 @@ static Error ParseReturn(Statements& statements)
 	return Error::None;
 }
 
-static Error ParseExpressionStatement(Statements& statements)
+[[nodiscard]] static Error ParseExpressionStatement(Statements& statements)
 {
 	const CodePos pos = GetPos();
 

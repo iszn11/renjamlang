@@ -61,11 +61,11 @@ static void SkipWhitespace(CodePtr& ptr);
 static bool IsIdentifierStart(char c);
 static bool IsIdentifierMiddle(char c);
 static bool IsDigit(char c);
-static Error LexComment(CodePtr& ptr, std::unique_ptr<Token>& out);
-static Error LexIdentifierOrKeyword(CodePtr& ptr, std::unique_ptr<Token>& out);
-static Error LexNumber(CodePtr& ptr, std::unique_ptr<Token>& out);
+[[nodiscard]] static Error LexComment(CodePtr& ptr, std::unique_ptr<Token>& out);
+[[nodiscard]] static Error LexIdentifierOrKeyword(CodePtr& ptr, std::unique_ptr<Token>& out);
+[[nodiscard]] static Error LexNumber(CodePtr& ptr, std::unique_ptr<Token>& out);
 
-Error Lex(const char* const code, std::vector<std::unique_ptr<Token>>& tokens)
+[[nodiscard]] Error Lex(const char* const code, std::vector<std::unique_ptr<Token>>& tokens)
 {
 	std::unique_ptr<Token> token;
 	CodePtr codePtr{code};
@@ -185,7 +185,7 @@ static bool IsDigit(const char c)
 	return c >= '0' && c <= '9';
 }
 
-static Error LexComment(CodePtr& ptr, std::unique_ptr<Token>& out)
+[[nodiscard]] static Error LexComment(CodePtr& ptr, std::unique_ptr<Token>& out)
 {
 	if (ptr[0] != '/' || ptr[1] != '*')
 	{
@@ -233,7 +233,7 @@ static Error LexComment(CodePtr& ptr, std::unique_ptr<Token>& out)
 	}
 }
 
-static Error LexIdentifierOrKeyword(CodePtr& ptr, std::unique_ptr<Token>& out)
+[[nodiscard]] static Error LexIdentifierOrKeyword(CodePtr& ptr, std::unique_ptr<Token>& out)
 {
 	if (!IsIdentifierStart(ptr[0]))
 	{
@@ -272,7 +272,7 @@ static Error LexIdentifierOrKeyword(CodePtr& ptr, std::unique_ptr<Token>& out)
 	return Error::None;
 }
 
-static Error LexNumber(CodePtr& ptr, std::unique_ptr<Token>& out)
+[[nodiscard]] static Error LexNumber(CodePtr& ptr, std::unique_ptr<Token>& out)
 {
 	if (!IsDigit(ptr[0]))
 	{

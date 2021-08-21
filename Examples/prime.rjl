@@ -1,4 +1,4 @@
-= isPrime fn (x)
+= isPrime fn (a)
   if <= a 1
     return false
   end

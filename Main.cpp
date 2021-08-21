@@ -1,6 +1,7 @@
 #include "Common.h"
 #include "Lexer.h"
 #include "Parser.h"
+#include "Interpreter.h"
 
 #include <cstdio>
 #include <iostream>
@@ -35,7 +36,7 @@ int main(int argc, char* argv[])
 		return 1;
 	}
 
-	PrintLexResults(filepath, tokens);
+	// PrintLexResults(filepath, tokens);
 
 	std::vector<std::unique_ptr<Statement>> statements;
 	error = Parse(tokens, statements);
@@ -45,7 +46,9 @@ int main(int argc, char* argv[])
 		return 1;
 	}
 
-	PrintParseResults(filepath, statements);
+	// PrintParseResults(filepath, statements);
+
+	Interpret(filepath, statements);
 }
 
 static void PrintLexResults(const std::string_view filePrefix, const std::vector<std::unique_ptr<Token>>& tokens)
