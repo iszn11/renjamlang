@@ -1,6 +1,10 @@
 #pragma once
 
+#include "CodePos.h"
+#include "Error.h"
+
 #include <cstddef>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -25,9 +29,6 @@ enum class TokenTag {
 	KeyFalse,
 	KeyTrue,
 
-	Newline,
-
-	Comma,         // ,
 	BracketOpen,   // [
 	BracketClose,  // ]
 	ParenOpen,     // (
@@ -55,29 +56,58 @@ enum class TokenTag {
 	Comment,
 };
 
-struct LexerError {
-	bool error;
-	std::string message;
-	size_t line;
-	size_t col;
-
-	LexerError() : error{false}, message{}, line{}, col{} {}
-	LexerError(std::string message, size_t line, size_t col) : error{true}, message{std::move(message)}, line{line}, col{col} {}
-
-	operator bool() const { return error; }
+enum class CommentNodeTag {
+	Text,
+	Expression,
 };
 
 struct Token {
 	TokenTag tag;
-	union {
-		double value;
-		std::string_view text;
-	};
-	size_t line;
-	size_t col;
+	CodePos pos;
 
-	Token(): tag{}, value{}, line{}, col{} {}
-	Token(const TokenTag tag, const size_t line, const size_t col) : tag{tag}, line{line}, col{col} {}
+	Token(const TokenTag tag, const CodePos pos) : tag{tag}, pos{pos} {}
+	virtual ~Token() = default;
 };
 
-LexerError Lex(const char* code, std::vector<Token>& tokens);
+struct NumberToken : public Token {
+	double value;
+
+	NumberToken(const double value, const CodePos pos) : Token{TokenTag::Number, pos}, value{value} {}
+};
+
+struct IdentifierToken : public Token {
+	std::string name;
+
+	IdentifierToken(std::string name, const CodePos pos) : Token{TokenTag::Identifier, pos}, name{std::move(name)} {}
+};
+
+struct CommentNode;
+
+struct CommentToken : public Token {
+	std::vector<std::unique_ptr<CommentNode>> nodes;
+
+	CommentToken(std::vector<std::unique_ptr<CommentNode>> nodes, const CodePos pos) : Token{TokenTag::Comment, pos}, nodes{std::move(nodes)} {}
+};
+
+struct CommentNode {
+	CommentNodeTag tag;
+
+	CommentNode(const CommentNodeTag tag) : tag{tag} {}
+	virtual ~CommentNode() = 0;
+};
+
+inline CommentNode::~CommentNode() {}
+
+struct CommentTextNode : public CommentNode {
+	std::string text;
+
+	CommentTextNode(std::string text) : CommentNode{CommentNodeTag::Text}, text{text} {}
+};
+
+struct CommentExpressionNode : public CommentNode {
+	std::vector<std::unique_ptr<Token>> tokens;
+
+	CommentExpressionNode(std::vector<std::unique_ptr<Token>> tokens) : CommentNode{CommentNodeTag::Expression}, tokens{std::move(tokens)} {}
+};
+
+Error Lex(const char* code, std::vector<std::unique_ptr<Token>>& tokens);

@@ -1,20 +1,20 @@
-// computes greates common divisor
-fn gcd a b
+/* computes greates common divisor */
+= gcd fn (a b)
 
   while != a b
 
-    // check if $a > $b
+    /* check if $a > $b */
     if > a b
-      // decrease a=$a by $b
+      /* decrease a=$a by $b */
       = a - a b
     else
-      // decrease b=$b by $a
+      /* decrease b=$b by $a */
       = b - b a
     end
 
   end
 
-  // the result is $a
+  /* the result is $a */
   return a
 end
 

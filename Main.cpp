@@ -1,33 +1,16 @@
+#include "Common.h"
 #include "Lexer.h"
 
 #include <cstdio>
 #include <iostream>
 
-static bool ReadFile(const char* filepath, std::string& out)
-{
-	out.clear();
-
-	FILE* file = fopen(filepath, "rb");
-	if (!file) return false;
-
-	fseek(file, 0, SEEK_END);
-	const long size = ftell(file);
-	rewind(file);
-
-	out.resize(size);
-	fread(out.data(), 1, size, file);
-	fclose(file);
-
-	return true;
-}
-
-static void PrintLexResults(const std::string_view filePrefix, const std::vector<Token>& tokens)
+static void PrintLexResults(const std::string_view filePrefix, const std::vector<std::unique_ptr<Token>>& tokens)
 {
 	for (const auto& token : tokens)
 	{
-		std::cout << filePrefix << ':' << token.line << ':' << token.col << ':';
+		std::cout << filePrefix << ':' << token->pos.line << ':' << token->pos.col << ':';
 
-		switch (token.tag)
+		switch (token->tag)
 		{
 			case TokenTag::KeyVoid: std::cout << "KeyVoid"; break;
 			case TokenTag::KeyIf: std::cout << "KeyIf"; break;
@@ -46,8 +29,6 @@ static void PrintLexResults(const std::string_view filePrefix, const std::vector
 			case TokenTag::KeyNeg: std::cout << "KeyNeg"; break;
 			case TokenTag::KeyFalse: std::cout << "KeyFalse"; break;
 			case TokenTag::KeyTrue: std::cout << "KeyTrue"; break;
-			case TokenTag::Newline: std::cout << "Newline"; break;
-			case TokenTag::Comma: std::cout << "Comma"; break;
 			case TokenTag::BracketOpen: std::cout << "BracketOpen"; break;
 			case TokenTag::BracketClose: std::cout << "BracketClose"; break;
 			case TokenTag::ParenOpen: std::cout << "ParenOpen"; break;
@@ -66,9 +47,22 @@ static void PrintLexResults(const std::string_view filePrefix, const std::vector
 			case TokenTag::NotEquals: std::cout << "NotEquals"; break;
 			case TokenTag::At: std::cout << "At"; break;
 			case TokenTag::Hash: std::cout << "Hash"; break;
-			case TokenTag::Number: std::cout << "Number " << token.value; break;
-			case TokenTag::Identifier: std::cout << "Identifier " << token.text; break;
-			case TokenTag::Comment: std::cout << "Comment " << token.text; break;
+			case TokenTag::Number: std::cout << "Number " << static_cast<NumberToken*>(token.get())->value; break;
+			case TokenTag::Identifier: std::cout << "Identifier " << static_cast<IdentifierToken*>(token.get())->name; break;
+			case TokenTag::Comment:
+			{
+				std::cout << "Comment\n";
+
+				for (const auto& node : static_cast<CommentToken*>(token.get())->nodes)
+				{
+					switch (node->tag)
+					{
+						case CommentNodeTag::Text: std::cout << "\tText " << static_cast<CommentTextNode*>(node.get())->text; break;
+						case CommentNodeTag::Expression: std::cout << "\tExpression"; break; // TODO Print tokens
+					}
+				}
+				break;
+			}
 		}
 
 		std::cout << '\n';
@@ -84,20 +78,22 @@ int main(int argc, char* argv[])
 		return 1;
 	}
 
+	const char* const filepath = argv[1];
+
 	std::string code;
-	if (!ReadFile(argv[1], code))
+	if (!ReadFile(filepath, code))
 	{
-		std::cerr << "Couldn't read file " << argv[1] << '\n';
+		std::cerr << "Couldn't read file " << filepath << '\n';
 		return 1;
 	}
 
-	std::vector<Token> tokens;
-	LexerError error = Lex(code.c_str(), tokens);
-	if (error.error)
+	std::vector<std::unique_ptr<Token>> tokens;
+	Error error = Lex(code.c_str(), tokens);
+	if (error)
 	{
-		std::cerr << "Lexer error: " << error.message << " at line " << error.line << ", column " << error.col << '\n';
+		std::cerr << filepath << ":" << error.pos.line << ":" << error.pos.col << ": Lexer error: " << error.message << '\n';
 		return 1;
 	}
 
-	PrintLexResults(argv[1], tokens);
+	PrintLexResults(filepath, tokens);
 }

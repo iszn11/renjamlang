@@ -1,8 +1,8 @@
-fn sort a
+= sort fn (a)
   = j - # a 2
   while >= j 0
     = x @ a j
-    // searching for place for $x at $j in $a
+    /* searching for place for $x at $j in $a */
     = i + j 1
     while and < i # a > x @ d i
       = @ d - i 1 @ d i
@@ -13,4 +13,6 @@ fn sort a
 end
 
 = arr [10 9 8 7 6 5 4 3 2 1]
+arr
 sort (arr)
+arr

@@ -1,19 +1,17 @@
+#include "Common.h"
 #include "Lexer.h"
 
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
 
-#define TRY(x) do { error = (x); if (error) return error; } while (false)
-
 using namespace std::literals;
 
 struct CodePtr {
 	const char* ptr;
-	size_t line{1};
-	size_t col{1};
+	CodePos pos;
 
-	CodePtr(const char* const ptr) : ptr{ptr} {}
+	CodePtr(const char* const ptr) : ptr{ptr}, pos{1, 1} {}
 
 	const char& operator[](const size_t index) const { return ptr[index]; }
 
@@ -24,12 +22,12 @@ struct CodePtr {
 			const char c = *ptr;
 			if (c == '\n')
 			{
-				line += 1;
-				col = 1;
+				pos.line += 1;
+				pos.col = 1;
 			}
 			else
 			{
-				col += 1;
+				pos.col += 1;
 			}
 		}
 		return *this;
@@ -63,14 +61,13 @@ static void SkipWhitespace(CodePtr& ptr);
 static bool IsIdentifierStart(char c);
 static bool IsIdentifierMiddle(char c);
 static bool IsDigit(char c);
-static LexerError LexComment(CodePtr& ptr, Token& out);
-static LexerError LexIdentifierOrKeyword(CodePtr& ptr, Token& out);
-static LexerError LexNumber(CodePtr& ptr, Token& out);
+static Error LexComment(CodePtr& ptr, std::unique_ptr<Token>& out);
+static Error LexIdentifierOrKeyword(CodePtr& ptr, std::unique_ptr<Token>& out);
+static Error LexNumber(CodePtr& ptr, std::unique_ptr<Token>& out);
 
-LexerError Lex(const char* const code, std::vector<Token>& tokens)
+Error Lex(const char* const code, std::vector<std::unique_ptr<Token>>& tokens)
 {
-	LexerError error;
-	Token token;
+	std::unique_ptr<Token> token;
 	CodePtr codePtr{code};
 
 	while (true)
@@ -79,24 +76,14 @@ LexerError Lex(const char* const code, std::vector<Token>& tokens)
 
 		SkipWhitespace(codePtr);
 
-		if (codePtr[0] == '\0') return LexerError{};
-
-		// newline
-
-		if (codePtr[0] == '\n')
-		{
-			tokens.emplace_back(TokenTag::Newline, codePtr.line, codePtr.col);
-			codePtr += 1;
-
-			continue;
-		}
+		if (codePtr[0] == '\0') return Error::None;
 
 		// comment
 
 		TRY(LexComment(codePtr, token));
 		if (success)
 		{
-			tokens.emplace_back(token);
+			tokens.emplace_back(std::move(token));
 			continue;
 		}
 
@@ -105,7 +92,7 @@ LexerError Lex(const char* const code, std::vector<Token>& tokens)
 		TRY(LexIdentifierOrKeyword(codePtr, token));
 		if (success)
 		{
-			tokens.emplace_back(token);
+			tokens.emplace_back(std::move(token));
 			continue;
 		}
 
@@ -114,7 +101,7 @@ LexerError Lex(const char* const code, std::vector<Token>& tokens)
 		TRY(LexNumber(codePtr, token));
 		if (success)
 		{
-			tokens.emplace_back(token);
+			tokens.emplace_back(std::move(token));
 			continue;
 		}
 
@@ -125,10 +112,10 @@ LexerError Lex(const char* const code, std::vector<Token>& tokens)
 			const uint16_t val = (codePtr[0] << 8) | codePtr[1];
 			switch (val)
 			{
-				case 0x3C3D: tokens.emplace_back(TokenTag::LessEquals, codePtr.line, codePtr.col);    codePtr += 2; continue;
-				case 0x3E3D: tokens.emplace_back(TokenTag::GreaterEquals, codePtr.line, codePtr.col); codePtr += 2; continue;
-				case 0x3D3D: tokens.emplace_back(TokenTag::EqualsEquals, codePtr.line, codePtr.col);  codePtr += 2; continue;
-				case 0x213D: tokens.emplace_back(TokenTag::NotEquals, codePtr.line, codePtr.col);     codePtr += 2; continue;
+				case 0x3C3D: tokens.emplace_back(std::make_unique<Token>(TokenTag::LessEquals, codePtr.pos));    codePtr += 2; continue;
+				case 0x3E3D: tokens.emplace_back(std::make_unique<Token>(TokenTag::GreaterEquals, codePtr.pos)); codePtr += 2; continue;
+				case 0x3D3D: tokens.emplace_back(std::make_unique<Token>(TokenTag::EqualsEquals, codePtr.pos));  codePtr += 2; continue;
+				case 0x213D: tokens.emplace_back(std::make_unique<Token>(TokenTag::NotEquals, codePtr.pos));     codePtr += 2; continue;
 			}
 		}
 
@@ -136,22 +123,21 @@ LexerError Lex(const char* const code, std::vector<Token>& tokens)
 
 		switch (codePtr[0])
 		{
-			case ',': tokens.emplace_back(TokenTag::Comma, codePtr.line, codePtr.col);        codePtr += 1; continue;
-			case '[': tokens.emplace_back(TokenTag::BracketOpen, codePtr.line, codePtr.col);  codePtr += 1; continue;
-			case ']': tokens.emplace_back(TokenTag::BracketClose, codePtr.line, codePtr.col); codePtr += 1; continue;
-			case '(': tokens.emplace_back(TokenTag::ParenOpen, codePtr.line, codePtr.col);    codePtr += 1; continue;
-			case ')': tokens.emplace_back(TokenTag::ParenClose, codePtr.line, codePtr.col);   codePtr += 1; continue;
-			case '+': tokens.emplace_back(TokenTag::Plus, codePtr.line, codePtr.col);         codePtr += 1; continue;
-			case '-': tokens.emplace_back(TokenTag::Minus, codePtr.line, codePtr.col);        codePtr += 1; continue;
-			case '*': tokens.emplace_back(TokenTag::Star, codePtr.line, codePtr.col);         codePtr += 1; continue;
-			case '/': tokens.emplace_back(TokenTag::Slash, codePtr.line, codePtr.col);        codePtr += 1; continue;
-			case '%': tokens.emplace_back(TokenTag::Percent, codePtr.line, codePtr.col);      codePtr += 1; continue;
-			case '=': tokens.emplace_back(TokenTag::Equals, codePtr.line, codePtr.col);       codePtr += 1; continue;
-			case '<': tokens.emplace_back(TokenTag::LessThan, codePtr.line, codePtr.col);     codePtr += 1; continue;
-			case '>': tokens.emplace_back(TokenTag::GreaterThan, codePtr.line, codePtr.col);  codePtr += 1; continue;
-			case '@': tokens.emplace_back(TokenTag::At, codePtr.line, codePtr.col);           codePtr += 1; continue;
-			case '#': tokens.emplace_back(TokenTag::Hash, codePtr.line, codePtr.col);         codePtr += 1; continue;
-			default: return LexerError{"Unrecognized token", codePtr.line, codePtr.col};
+			case '[': tokens.emplace_back(std::make_unique<Token>(TokenTag::BracketOpen, codePtr.pos));  codePtr += 1; continue;
+			case ']': tokens.emplace_back(std::make_unique<Token>(TokenTag::BracketClose, codePtr.pos)); codePtr += 1; continue;
+			case '(': tokens.emplace_back(std::make_unique<Token>(TokenTag::ParenOpen, codePtr.pos));    codePtr += 1; continue;
+			case ')': tokens.emplace_back(std::make_unique<Token>(TokenTag::ParenClose, codePtr.pos));   codePtr += 1; continue;
+			case '+': tokens.emplace_back(std::make_unique<Token>(TokenTag::Plus, codePtr.pos));         codePtr += 1; continue;
+			case '-': tokens.emplace_back(std::make_unique<Token>(TokenTag::Minus, codePtr.pos));        codePtr += 1; continue;
+			case '*': tokens.emplace_back(std::make_unique<Token>(TokenTag::Star, codePtr.pos));         codePtr += 1; continue;
+			case '/': tokens.emplace_back(std::make_unique<Token>(TokenTag::Slash, codePtr.pos));        codePtr += 1; continue;
+			case '%': tokens.emplace_back(std::make_unique<Token>(TokenTag::Percent, codePtr.pos));      codePtr += 1; continue;
+			case '=': tokens.emplace_back(std::make_unique<Token>(TokenTag::Equals, codePtr.pos));       codePtr += 1; continue;
+			case '<': tokens.emplace_back(std::make_unique<Token>(TokenTag::LessThan, codePtr.pos));     codePtr += 1; continue;
+			case '>': tokens.emplace_back(std::make_unique<Token>(TokenTag::GreaterThan, codePtr.pos));  codePtr += 1; continue;
+			case '@': tokens.emplace_back(std::make_unique<Token>(TokenTag::At, codePtr.pos));           codePtr += 1; continue;
+			case '#': tokens.emplace_back(std::make_unique<Token>(TokenTag::Hash, codePtr.pos));         codePtr += 1; continue;
+			default: return Error{"Unrecognized token", codePtr.pos};
 		}
 	}
 }
@@ -165,6 +151,7 @@ static void SkipWhitespace(CodePtr& ptr)
 		{
 		case '\t':
 		case '\r':
+		case '\n':
 		case ' ':
 			ptr += 1;
 			break;
@@ -194,16 +181,15 @@ static bool IsDigit(const char c)
 	return c >= '0' && c <= '9';
 }
 
-static LexerError LexComment(CodePtr& ptr, Token& out)
+static Error LexComment(CodePtr& ptr, std::unique_ptr<Token>& out)
 {
-	if (ptr[0] != '/' || ptr[1] != '/')
+	if (ptr[0] != '/' || ptr[1] != '*')
 	{
 		success = false;
-		return LexerError{};
+		return Error::None;
 	}
 
-	const size_t line = ptr.line;
-	const size_t col = ptr.col;
+	const CodePos pos = ptr.pos;
 
 	ptr += 2;
 	SkipWhitespace(ptr);
@@ -216,13 +202,25 @@ static LexerError LexComment(CodePtr& ptr, Token& out)
 		switch (ptr[0])
 		{
 		case '\0':
+			return Error{Format("Unexpected EOF, missing */ to close /* (at line %zu, column %zu)", pos.line, pos.col), ptr.pos};
 		case '\n':
-			out.tag = TokenTag::Comment;
-			out.text = std::string_view{commentStart, commentLength};
-			out.line = line;
-			out.col = col;
+			ptr += 1;
+			SkipWhitespace(ptr);
+			break;
+		case '*':
+		{
+			ptr += 1;
+			if (ptr[0] != '/') break;
+
+			ptr += 1;
+
+			std::vector<std::unique_ptr<CommentNode>> nodes;
+			nodes.emplace_back(std::make_unique<CommentTextNode>(std::string{commentStart, commentLength})); // TODO Wrong length
+
+			out = std::make_unique<CommentToken>(std::move(nodes), pos);
 			success = true;
-			return LexerError{};
+			return Error::None;
+		}
 		default:
 			ptr += 1;
 			commentLength += 1;
@@ -231,16 +229,15 @@ static LexerError LexComment(CodePtr& ptr, Token& out)
 	}
 }
 
-static LexerError LexIdentifierOrKeyword(CodePtr& ptr, Token& out)
+static Error LexIdentifierOrKeyword(CodePtr& ptr, std::unique_ptr<Token>& out)
 {
 	if (!IsIdentifierStart(ptr[0]))
 	{
 		success = false;
-		return LexerError{};
+		return Error::None;
 	}
 
-	const size_t line = ptr.line;
-	const size_t col = ptr.col;
+	const CodePos pos = ptr.pos;
 
 	const char* const start = &ptr[0];
 
@@ -260,30 +257,26 @@ static LexerError LexIdentifierOrKeyword(CodePtr& ptr, Token& out)
 		if (text != KEYWORDS[i]) continue;
 
 		success = true;
-		out = Token{static_cast<TokenTag>(i), line, col};
-		return LexerError{};
+		out = std::make_unique<Token>(static_cast<TokenTag>(i), pos);
+		return Error::None;
 	}
 
 	// identifier
 
-	out.tag = TokenTag::Identifier;
-	out.text = text;
-	out.line = line;
-	out.col = col;
 	success = true;
-	return LexerError{};
+	out = std::make_unique<IdentifierToken>(std::string{text}, pos);
+	return Error::None;
 }
 
-static LexerError LexNumber(CodePtr& ptr, Token& out)
+static Error LexNumber(CodePtr& ptr, std::unique_ptr<Token>& out)
 {
 	if (!IsDigit(ptr[0]))
 	{
 		success = false;
-		return LexerError{};
+		return Error::None;
 	}
 
-	const size_t line = ptr.line;
-	const size_t col = ptr.col;
+	const CodePos pos = ptr.pos;
 
 	const char* const start = &ptr[0];
 
@@ -305,10 +298,7 @@ static LexerError LexNumber(CodePtr& ptr, Token& out)
 		ptr += 1;
 	}
 
-	out.tag = TokenTag::Number;
-	out.value = atof(start);
-	out.line = line;
-	out.col = col;
 	success = true;
-	return LexerError{};
+	out = std::make_unique<NumberToken>(atof(start), pos);
+	return Error::None;
 }
