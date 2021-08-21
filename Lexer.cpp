@@ -76,7 +76,11 @@ Error Lex(const char* const code, std::vector<std::unique_ptr<Token>>& tokens)
 
 		SkipWhitespace(codePtr);
 
-		if (codePtr[0] == '\0') return Error::None;
+		if (codePtr[0] == '\0')
+		{
+			tokens.emplace_back(std::make_unique<Token>(TokenTag::Eof, codePtr.pos));
+			return Error::None;
+		}
 
 		// comment
 
@@ -137,7 +141,7 @@ Error Lex(const char* const code, std::vector<std::unique_ptr<Token>>& tokens)
 			case '>': tokens.emplace_back(std::make_unique<Token>(TokenTag::GreaterThan, codePtr.pos));  codePtr += 1; continue;
 			case '@': tokens.emplace_back(std::make_unique<Token>(TokenTag::At, codePtr.pos));           codePtr += 1; continue;
 			case '#': tokens.emplace_back(std::make_unique<Token>(TokenTag::Hash, codePtr.pos));         codePtr += 1; continue;
-			default: return Error{"Unrecognized token", codePtr.pos};
+			default: return Error{"Unrecognized token.", codePtr.pos};
 		}
 	}
 }
@@ -202,7 +206,7 @@ static Error LexComment(CodePtr& ptr, std::unique_ptr<Token>& out)
 		switch (ptr[0])
 		{
 		case '\0':
-			return Error{Format("Unexpected EOF, missing */ to close /* (at line %zu, column %zu)", pos.line, pos.col), ptr.pos};
+			return Error{Format("Unexpected EOF, missing */ to close /* (at line %zu, column %zu).", pos.line, pos.col), ptr.pos};
 		case '\n':
 			ptr += 1;
 			SkipWhitespace(ptr);

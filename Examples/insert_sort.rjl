@@ -2,7 +2,6 @@
   = j - # a 2
   while >= j 0
     = x @ a j
-    /* searching for place for $x at $j in $a */
     = i + j 1
     while and < i # a > x @ d i
       = @ d - i 1 @ d i

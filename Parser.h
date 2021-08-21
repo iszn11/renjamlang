@@ -3,6 +3,8 @@
 #include "CodePos.h"
 #include "Error.h"
 
+#include "Lexer.h"
+
 #include <memory>
 #include <utility>
 #include <vector>
@@ -19,17 +21,17 @@ enum class ExpressionTag {
 	False,           // Expression
 	True,            // Expression
 	NumberLiteral,   // NumberLiteral
+	ArrayLiteral,    // ArrayLiteral
 	FunctionLiteral, // FunctionLiteral
 	Identifier,      // Identifier
 
 	Unary,           // UnaryOperation
 	Binary,          // BinaryOperation
 
-	ArrayLiteral,    // ArrayLiteral
 	Call,            // Call
 };
 
-enum class UnaryOp {
+/*enum class UnaryOp {
 	Not,
 	Negate,
 	Void,
@@ -52,7 +54,7 @@ enum class BinaryOp {
 	EqualsEquals,
 	NotEquals,
 	ArrayRead,
-};
+};*/
 
 enum class StatementTag {
 	If,         // IfStatement
@@ -65,6 +67,8 @@ enum class StatementTag {
 	Expression, // ExpressionStatement
 };
 
+struct Statement;
+
 // --- EXPRESSIONS -------------------------------------------------------------
 
 struct Expression {
@@ -72,10 +76,8 @@ struct Expression {
 	CodePos pos;
 
 	Expression(const ExpressionTag tag, const CodePos pos) : tag{tag}, pos{pos} {}
-	virtual ~Expression() = 0;
+	virtual ~Expression() = default;
 };
-
-inline Expression::~Expression() {}
 
 struct NumberLiteral : public Expression {
 	double value;
@@ -85,9 +87,9 @@ struct NumberLiteral : public Expression {
 
 struct FunctionLiteral : public Expression {
 	std::vector<std::string> args;
-	// TODO statements
+	std::vector<std::unique_ptr<Statement>> statements;
 
-	FunctionLiteral(std::vector<std::string> args, const CodePos pos) : Expression{ExpressionTag::FunctionLiteral, pos}, args{std::move(args)} {}
+	FunctionLiteral(std::vector<std::string> args, std::vector<std::unique_ptr<Statement>> statements, const CodePos pos) : Expression{ExpressionTag::FunctionLiteral, pos}, args{std::move(args)}, statements{std::move(statements)} {}
 };
 
 struct Identifier : public Expression {
@@ -97,31 +99,31 @@ struct Identifier : public Expression {
 };
 
 struct UnaryOperation : public Expression {
-	UnaryOp op;
+	TokenTag op;
 	std::unique_ptr<Expression> a;
 
-	UnaryOperation(const ExpressionTag tag, const UnaryOp op, std::unique_ptr<Expression> a, const CodePos pos) : Expression{tag, pos}, op{op}, a{std::move(a)} {}
+	UnaryOperation(const TokenTag op, std::unique_ptr<Expression> a, const CodePos pos) : Expression{ExpressionTag::Unary, pos}, op{op}, a{std::move(a)} {}
 };
 
 struct BinaryOperation : public Expression {
-	BinaryOp op;
+	TokenTag op;
 	std::unique_ptr<Expression> a;
 	std::unique_ptr<Expression> b;
 
-	BinaryOperation(const ExpressionTag tag, const BinaryOp op, std::unique_ptr<Expression> a, std::unique_ptr<Expression> b, const CodePos pos) : Expression{tag, pos}, op{op}, a{std::move(a)}, b{std::move(b)} {}
+	BinaryOperation(const TokenTag op, std::unique_ptr<Expression> a, std::unique_ptr<Expression> b, const CodePos pos) : Expression{ExpressionTag::Binary, pos}, op{op}, a{std::move(a)}, b{std::move(b)} {}
 };
 
 struct ArrayLiteral : public Expression {
 	std::vector<std::unique_ptr<Expression>> values;
 
-	ArrayLiteral(const ExpressionTag tag, std::vector<std::unique_ptr<Expression>> values, const CodePos pos) : Expression{tag, pos}, values{std::move(values)} {}
+	ArrayLiteral(std::vector<std::unique_ptr<Expression>> values, const CodePos pos) : Expression{ExpressionTag::ArrayLiteral, pos}, values{std::move(values)} {}
 };
 
 struct Call : public Expression {
 	std::unique_ptr<Expression> function;
 	std::vector<std::unique_ptr<Expression>> values;
 
-	Call(const ExpressionTag tag, std::unique_ptr<Expression> function, std::vector<std::unique_ptr<Expression>> values, const CodePos pos) : Expression{tag, pos}, function{std::move(function)}, values{std::move(values)} {}
+	Call(std::unique_ptr<Expression> function, std::vector<std::unique_ptr<Expression>> values, const CodePos pos) : Expression{ExpressionTag::Call, pos}, function{std::move(function)}, values{std::move(values)} {}
 };
 
 // --- STATEMENTS --------------------------------------------------------------
@@ -138,24 +140,24 @@ inline Statement::~Statement() {}
 
 struct ConditionBlock {
 	std::unique_ptr<Expression> condition;
-	std::vector<Statement> statements;
+	std::vector<std::unique_ptr<Statement>> statements;
 
 	ConditionBlock() = default;
-	ConditionBlock(std::unique_ptr<Expression> condition, std::vector<Statement> statements) : condition{std::move(condition)}, statements{std::move(statements)} {}
+	ConditionBlock(std::unique_ptr<Expression> condition, std::vector<std::unique_ptr<Statement>> statements) : condition{std::move(condition)}, statements{std::move(statements)} {}
 };
 
 struct IfStatement : public Statement {
 	std::vector<ConditionBlock> elifChain;
-	std::vector<Statement> elseBlock;
+	std::vector<std::unique_ptr<Statement>> elseBlock;
 
-	IfStatement(std::vector<ConditionBlock> elifChain, std::vector<Statement> elseBlock, const CodePos pos) : Statement{StatementTag::If, pos}, elifChain{std::move(elifChain)}, elseBlock{std::move(elseBlock)} {}
+	IfStatement(std::vector<ConditionBlock> elifChain, std::vector<std::unique_ptr<Statement>> elseBlock, const CodePos pos) : Statement{StatementTag::If, pos}, elifChain{std::move(elifChain)}, elseBlock{std::move(elseBlock)} {}
 };
 
 struct WhileStatement : public Statement {
 	std::unique_ptr<Expression> condition;
-	std::vector<Statement> statements;
+	std::vector<std::unique_ptr<Statement>> statements;
 
-	WhileStatement(std::unique_ptr<Expression> condition, std::vector<Statement> statements, const CodePos pos) : Statement{StatementTag::While, pos}, condition{std::move(condition)}, statements{std::move(statements)} {}
+	WhileStatement(std::unique_ptr<Expression> condition, std::vector<std::unique_ptr<Statement>> statements, const CodePos pos) : Statement{StatementTag::While, pos}, condition{std::move(condition)}, statements{std::move(statements)} {}
 };
 
 struct AssignmentStatement : public Statement {

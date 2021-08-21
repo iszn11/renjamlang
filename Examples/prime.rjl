@@ -4,7 +4,6 @@
   end
   = i 2
   while <= * i i a
-    /* checking if $a is divisible by $i */
     if == % a i 0
       return false
     end
@@ -13,7 +12,7 @@
   return true
 end
 
-= i 1
-while <= i 100
+= i 1 while <= i 100
   if isPrime (i) i end
+  = i + i 1
 end

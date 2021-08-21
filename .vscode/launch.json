@@ -9,7 +9,7 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/rjl",
-            "args": [],
+            "args": ["${workspaceFolder}/Examples/prime.rjl"],
             "stopAtEntry": false,
             "cwd": "${fileDirname}",
             "environment": [],

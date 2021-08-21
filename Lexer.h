@@ -54,6 +54,8 @@ enum class TokenTag {
 	Number,
 	Identifier,
 	Comment,
+
+	Eof,
 };
 
 enum class CommentNodeTag {

@@ -7,7 +7,7 @@
   end
   = i 2
   while <= * i i n
-    if = @ A i 1
+    if == @ A i 1
       = j * i i
       while < j n
         = @ A j 0
