@@ -26,4 +26,4 @@
   return out
 end
 
-sieve (1000)
+sieve (100)
