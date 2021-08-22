@@ -26,6 +26,18 @@ type in `x` in REPL to print the value, you will get this output:
 You get the comment with `$x` substituded for the actual value of `x` and the
 value of `x` below.
 
+Small example to try in REPL:
+
+```
+> = add fn (a b) /* Result of adding $a and $b. */ return + a b end
+> add (1 3)
+/* Result of adding 1 and 3. */
+4
+> add (4 2)
+/* Result of adding 4 and 2. */
+6
+```
+
 Fun fact: this language doesn't use semicolons *and* doesn't care about
 whitespace (spaces and newlines are treated equally), so you can have a program
 that is just a giant single line.
@@ -38,14 +50,8 @@ You need `g++`. Run `./build.sh` or run directly:
 g++ -std=c++17 -pedantic -Wall -Wextra -g -o rjl Common.cpp Main.cpp Lexer.cpp Parser.cpp Interpreter.cpp
 ```
 
-# Running
-
 After building run `./rjl` to get a REPL or `./rjl FILE` to read and execute a
 script in `FILE`.
-
-# Small examples
-
-Some lines for you to try out in REPL.
 
 # Examples
 
@@ -215,3 +221,245 @@ sieve (100)
 /* Prime numbers from 2 to 100. */
 [2 3 5 7 11 13 17 19 23 29 31 37 41 43 47 53 59 61 67 71 73 79 83 89 97]
 ```
+
+# Details
+
+Types:
+
+* void
+* bool (`false`, `true`)
+* number (double-precision floating-point, e.g. `1`, `2`, `0.5`)
+* array (array of numbers only, e.g. `[]`, `[0 1 2]`)
+* function (first-class, e.g. `fn () end`, `fn one () return 1 end`, `fn diff (a b) return - a b end`)
+
+## Statements
+
+A well-formed program is a sequence of statements.
+
+**If**
+
+```
+if CONDITION
+    STATEMENTS
+end
+
+if CONDITION
+    STATEMENTS
+else
+    STATEMENTS
+end
+
+if CONDITION
+    STATEMENTS
+elif CONDITION
+    STATEMENTS
+else
+    STATEMENTS
+end
+```
+
+**While**
+
+```
+while CONDITION
+    STATEMENTS
+end
+```
+
+**Assignment**
+
+```
+= IDENTIFIER EXPRESSION
+```
+
+**Array write**
+
+Write a value to an array. `IDENTIFIER` has to refer to existing array.
+`INDEX` is an expresion of type number. `VALUE` is an expression of type number.
+This statement cannot change array's length.
+
+```
+= @ IDENTIFIER INDEX VALUE
+```
+
+**Array push**
+
+Increase length of an array by one by pushing a value. `IDENTIFIER` has to refer
+to exisiting array. `VALUE` is an expression of type number.
+
+```
+push IDENTIFIER VALUE
+```
+
+**Array pop**
+
+Decrease length of an array by one by removing last value. `IDENTIFIER` has to
+refer to exising array. Note that this is not an expression and doesn't return
+any value.
+
+```
+pop IDENTIFIER
+```
+
+**Return**
+
+Returns any value from a function. Can't be used at top-level code.
+
+```
+return EXPRESSION
+```
+
+**Expression**
+
+Any expression is also a valid statement. If statement is an expression and the
+expression evaluates to a non-void value, then the value is printed (with its
+comment, if any attached). If you don't want to print an expresion, use `void`
+unary operator.
+
+## Expressions
+
+**Bool literal**
+
+```
+false
+true
+```
+
+**Number literal**
+
+Negative number literals are not supported. If you want a negative number, use
+`neg` unary operator.
+
+```
+0
+1
+0.5
+```
+
+**Array literal**
+
+Array literal consists of brackets `[]` with any number of expressions inside.
+Expressions have to evaluate to a number.
+
+```
+[]
+[0]
+[0 1 2 3 4 5 6 7 8 9]
+[+ 1 2 - 2 3 * 4 5 / 6 7]
+```
+
+**Function literal**
+
+Function literal requires argument list, which consists of parentheses `()` with
+any number of identifiers inside. Types of arguments and return value are not
+specified (could be of any type at runtime). If no return statement is
+encountered function returns void.
+
+```
+fn ()
+    STATEMENTS
+end
+
+fn (a)
+    STATEMENTS
+end
+
+fn (a b c d)
+    STATEMENTS
+end
+```
+
+**Unary operators**
+
+* `not BOOL` – logical not
+* `neg NUMBER` – negates a number
+* `void EXPRESSION` – turns any expression into void value
+* `# ARRAY` – gets length of an array
+
+**Binary operators**
+
+* `+ NUMBER NUMBER`
+* `- NUMBER NUMBER`
+* `* NUMBER NUMBER`
+* `/ NUMBER NUMBER`
+* `% NUMBER NUMBER`
+* `and BOOL BOOL`
+* `or NUMBER NUMBER`
+* `xor NUMBER NUMBER`
+* `< NUMBER NUMBER`
+* `> NUMBER NUMBER`
+* `<= NUMBER NUMBER`
+* `>= NUMBER NUMBER`
+* `== NUMBER NUMBER`
+* `!= NUMBER NUMBER`
+* `@ ARRAY INDEX` – reads a value from an array
+
+**Identifier**
+
+Identifier respects the regular expression `[_a-zA-Z][_a-zA-Z0-9]*` and is not
+one of reserved keywords:
+
+* `and`
+* `elif`
+* `else`
+* `end`
+* `false`
+* `fn`
+* `if`
+* `neg`
+* `not`
+* `or`
+* `pop`
+* `push`
+* `return`
+* `true`
+* `void`
+* `while`
+* `xor`
+
+**Call**
+
+`FUNCTION` is an expression that evaluates to a function. `ARGUMENTS` is any
+number of expressions. When a function is called, the number of actual and
+formal parameters has to be the same.
+
+```
+FUNCTION (ARGUMENTS)
+```
+
+## Comments
+
+Comments start with `/*` and end with `*/`. Comments cannot nest. Inside a
+comment you can refer to a variable by using `$IDENTIFIER` syntax, i.e. `$`
+immediately followed by an identifier. If you want to get literal `$`, use `$$`.
+Comments capture variables by name, not by values. That means that a comment
+holds a reference to a scope in which it was defined. References to variables
+inside a comment are evaluated and substituded when comment gets printed out.
+
+Any value (not necessarily a variable) can have a comment attached to it. To do
+this, simply type a comment before any expression (except call). For example:
+
+```
+/* This is the number one. */ 1
+/* Empty array. */ []
+/* Sum of some numbers. */ + 10 20
+```
+
+Note that while an array can have a comment attached, its elements cannot.
+
+The comments can propagate through operations under certain conditions.
+
+* All unary operators copy comment of its operand to its result (unless the
+  operation is preceeded by a comment, which then takes precedence).
+* All binary operators copy comment to its result if one and only one of its
+  operands have a comment (unless the operation is preceeded by a comment, which
+  then takes precedence).
+* Identifier will evaluate to a value with its comment, but the comment can be
+  overriden by preceeding the identifier with a comment.
+
+Return and assignment statements can have a comment preceeding them, which will
+get attached to returned or assigned value, respectively. Such comment will take
+precedence over logic described above and override the comment that resulted
+from expression evaluation (if any).
+
+Other statements can have comments preceeding them, but they carry no semantics.
