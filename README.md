@@ -231,7 +231,7 @@ Types:
 * bool (`false`, `true`)
 * number (double-precision floating-point, e.g. `1`, `2`, `0.5`)
 * array (array of numbers only, e.g. `[]`, `[0 1 2]`)
-* function (first-class, e.g. `fn () end`, `fn one () return 1 end`, `fn diff (a b) return - a b end`)
+* function (first-class, e.g. `fn () end`, `fn () return 1 end`, `fn (a b) return - a b end`)
 
 ## Statements
 
