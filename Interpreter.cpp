@@ -16,54 +16,65 @@ enum class TypeTag {
 	Function, // FunctionRef
 };
 
+struct Scope;
+
+struct Comment {
+	std::unique_ptr<CommentToken> token;
+	std::shared_ptr<Scope> scope;
+
+	Comment(const CommentToken& token, std::shared_ptr<Scope> scope) : token{token.make_clone()}, scope{std::move(scope)} {}
+};
+
 struct Value {
 	TypeTag type;
-	// TODO Here goes comment
+	std::shared_ptr<Comment> attachedComment;
 
-	explicit Value(const TypeTag type) : type{type} {}
+	explicit Value(const TypeTag type, std::shared_ptr<Comment> attachedComment) : type{type}, attachedComment{std::move(attachedComment)} {}
 	virtual ~Value() = default;
 
-	virtual std::unique_ptr<Value> make_clone() { return std::make_unique<Value>(type); }
+	virtual std::unique_ptr<Value> make_clone() const { return std::make_unique<Value>(type, attachedComment); }
 };
 
 struct BoolValue : public Value {
 	bool value;
 
-	explicit BoolValue(const bool value) : Value{TypeTag::Bool}, value{value} {}
-	std::unique_ptr<Value> make_clone() override { return std::make_unique<BoolValue>(value); }
+	explicit BoolValue(const bool value, std::shared_ptr<Comment> attachedComment) : Value{TypeTag::Bool, std::move(attachedComment)}, value{value} {}
+	std::unique_ptr<Value> make_clone() const override { return std::make_unique<BoolValue>(value, attachedComment); }
 };
 
 struct NumberValue : public Value {
 	double value;
 
-	explicit NumberValue(const double value) : Value{TypeTag::Number}, value{value} {}
-	std::unique_ptr<Value> make_clone() override { return std::make_unique<NumberValue>(value); }
+	explicit NumberValue(const double value, std::shared_ptr<Comment> attachedComment) : Value{TypeTag::Number, std::move(attachedComment)}, value{value} {}
+	std::unique_ptr<Value> make_clone() const override { return std::make_unique<NumberValue>(value, attachedComment); }
 };
 
 struct ArrayRef : public Value {
 	std::shared_ptr<std::vector<double>> array;
 
-	explicit ArrayRef(std::shared_ptr<std::vector<double>> array) : Value{TypeTag::Array}, array{std::move(array)} {}
-	std::unique_ptr<Value> make_clone() override { return std::make_unique<ArrayRef>(array); }
+	explicit ArrayRef(std::shared_ptr<std::vector<double>> array, std::shared_ptr<Comment> attachedComment) : Value{TypeTag::Array, std::move(attachedComment)}, array{std::move(array)} {}
+	std::unique_ptr<Value> make_clone() const override { return std::make_unique<ArrayRef>(array, attachedComment); }
 };
 
 struct Function {
-	std::vector<std::string> args;
-	std::vector<std::unique_ptr<Statement>> statements;
-	// TODO Closure goes here
+	std::shared_ptr<std::vector<std::string>> args;
+	std::shared_ptr<std::vector<std::unique_ptr<Statement>>> statements;
+	std::shared_ptr<Scope> closure;
 
-	Function(std::vector<std::string> args, std::vector<std::unique_ptr<Statement>> statements) : args{std::move(args)}, statements{std::move(statements)} {}
+	Function(std::shared_ptr<std::vector<std::string>> args, std::shared_ptr<std::vector<std::unique_ptr<Statement>>> statements, std::shared_ptr<Scope> closure) : args{std::move(args)}, statements{std::move(statements)}, closure{std::move(closure)} {}
 };
 
 struct FunctionRef : public Value {
 	std::shared_ptr<Function> function;
+	// TODO NOTE Should we attach comments to function/array values or references?
 
-	explicit FunctionRef(std::shared_ptr<Function> function) : Value{TypeTag::Function}, function{std::move(function)} {}
-	std::unique_ptr<Value> make_clone() override { return std::make_unique<FunctionRef>(function); }
+	explicit FunctionRef(std::shared_ptr<Function> function, std::shared_ptr<Comment> attachedComment) : Value{TypeTag::Function, std::move(attachedComment)}, function{std::move(function)} {}
+	std::unique_ptr<Value> make_clone() const override { return std::make_unique<FunctionRef>(function, attachedComment); }
 };
 
 struct Scope {
 	std::unordered_map<std::string, std::unique_ptr<Value>> bindings;
+	std::shared_ptr<Scope> parent_scope;
 
 	bool TryGetValue(const std::string& name, std::unique_ptr<Value>*& out)
 	{
@@ -72,7 +83,7 @@ struct Scope {
 		auto it = bindings.find(name);
 		if (it == bindings.end())
 		{
-			return false;
+			return parent_scope ? parent_scope->TryGetValue(name, out) : false;
 		}
 		else
 		{
@@ -96,15 +107,15 @@ struct Scope {
 	}
 };
 
-static Scope globalScope;
+static std::shared_ptr<Scope> globalScope = std::make_shared<Scope>();
 static struct {
 	bool unwind;
 	std::unique_ptr<Value> returnValue;
 } unwindToken;
 
-[[nodiscard]] static Error RunStatement(const Statement& statement, Scope& scope);
-[[nodiscard]] static Error Evaluate(Expression& expression, Scope& scope, std::unique_ptr<Value>& out);
-static void PrintValue(const Value& value);
+[[nodiscard]] static Error RunStatement(const Statement& statement, const std::shared_ptr<Scope>& scope);
+[[nodiscard]] static Error Evaluate(Expression& expression, const std::shared_ptr<Scope>& scope, std::unique_ptr<Value>& out);
+static void PrintValue(const Value& value, bool inComment);
 
 void Interpret(std::string_view filePrefix, std::vector<std::unique_ptr<Statement>>& statements)
 {
@@ -124,7 +135,7 @@ void Interpret(std::string_view filePrefix, std::vector<std::unique_ptr<Statemen
 	}
 }
 
-[[nodiscard]] static Error RunStatement(const Statement& statement, Scope& scope)
+[[nodiscard]] static Error RunStatement(const Statement& statement, const std::shared_ptr<Scope>& scope)
 {
 	switch (statement.tag)
 	{
@@ -210,15 +221,19 @@ void Interpret(std::string_view filePrefix, std::vector<std::unique_ptr<Statemen
 		std::unique_ptr<Value> value;
 		TRY(Evaluate(*assignment.value, scope, value));
 
-		if (value->type == TypeTag::Void) scope.Void(assignment.name);
-		else scope.SetValue(assignment.name, std::move(value));
+		if (value->type == TypeTag::Void) scope->Void(assignment.name);
+		else
+		{
+			if (assignment.attachedComment) value->attachedComment = std::make_shared<Comment>(*assignment.attachedComment, scope);
+			scope->SetValue(assignment.name, std::move(value));
+		}
 		return Error::None;
 	}
 	case StatementTag::ArrayWrite:
 	{
 		const auto& arrayWrite = static_cast<const ArrayWriteStatement&>(statement);
 		std::unique_ptr<Value>* arrayValue;
-		if (!scope.TryGetValue(arrayWrite.name, arrayValue))
+		if (!scope->TryGetValue(arrayWrite.name, arrayValue))
 		{
 			return Error{Format("No array named %s.", arrayWrite.name.c_str()), statement.pos};
 		}
@@ -259,7 +274,7 @@ void Interpret(std::string_view filePrefix, std::vector<std::unique_ptr<Statemen
 	{
 		const auto& arrayPush = static_cast<const ArrayPushStatement&>(statement);
 		std::unique_ptr<Value>* arrayValue;
-		if (!scope.TryGetValue(arrayPush.name, arrayValue))
+		if (!scope->TryGetValue(arrayPush.name, arrayValue))
 		{
 			return Error{Format("No array named %s.", arrayPush.name.c_str()), statement.pos};
 		}
@@ -286,7 +301,7 @@ void Interpret(std::string_view filePrefix, std::vector<std::unique_ptr<Statemen
 	{
 		const auto& arrayPop = static_cast<const ArrayPopStatement&>(statement);
 		std::unique_ptr<Value>* value;
-		if (!scope.TryGetValue(arrayPop.name, value))
+		if (!scope->TryGetValue(arrayPop.name, value))
 		{
 			return Error{Format("No array named %s.", arrayPop.name.c_str()), statement.pos};
 		}
@@ -307,6 +322,7 @@ void Interpret(std::string_view filePrefix, std::vector<std::unique_ptr<Statemen
 		std::unique_ptr<Value> value;
 		unwindToken.unwind = true;
 		TRY(Evaluate(*returnStatement.value, scope, unwindToken.returnValue));
+		if (returnStatement.attachedComment) unwindToken.returnValue->attachedComment = std::make_shared<Comment>(*returnStatement.attachedComment, scope);
 		return Error::None;
 	}
 	case StatementTag::Expression:
@@ -314,22 +330,38 @@ void Interpret(std::string_view filePrefix, std::vector<std::unique_ptr<Statemen
 		const auto& expressionStatement = static_cast<const ExpressionStatement&>(statement);
 		std::unique_ptr<Value> value;
 		TRY(Evaluate(*expressionStatement.value, scope, value));
-		PrintValue(*value);
+		PrintValue(*value, false);
 		return Error::None;
 	}
 	}
 	return Error{"Internal error: Unrecognized statement.", statement.pos};
 }
 
-[[nodiscard]] static Error Evaluate(Expression& expression, Scope& scope, std::unique_ptr<Value>& out)
+[[nodiscard]] static Error Evaluate(Expression& expression, const std::shared_ptr<Scope>& scope, std::unique_ptr<Value>& out)
 {
 	switch (expression.tag)
 	{
-		case ExpressionTag::False: out = std::make_unique<BoolValue>(false); return Error::None;
-		case ExpressionTag::True: out = std::make_unique<BoolValue>(true); return Error::None;
-		case ExpressionTag::NumberLiteral: out = std::make_unique<NumberValue>(static_cast<const NumberLiteral&>(expression).value); return Error::None;
+		case ExpressionTag::False:
+		{
+			std::shared_ptr<Comment> comment = expression.attachedComment ? std::make_shared<Comment>(*expression.attachedComment, scope) : nullptr;
+			out = std::make_unique<BoolValue>(false, std::move(comment));
+			return Error::None;
+		}
+		case ExpressionTag::True:
+		{
+			std::shared_ptr<Comment> comment = expression.attachedComment ? std::make_shared<Comment>(*expression.attachedComment, scope) : nullptr;
+			out = std::make_unique<BoolValue>(true, std::move(comment));
+			return Error::None;
+		}
+		case ExpressionTag::NumberLiteral:
+		{
+			std::shared_ptr<Comment> comment = expression.attachedComment ? std::make_shared<Comment>(*expression.attachedComment, scope) : nullptr;
+			out = std::make_unique<NumberValue>(static_cast<const NumberLiteral&>(expression).value, std::move(comment));
+			return Error::None;
+		}
 		case ExpressionTag::ArrayLiteral:
 		{
+			std::shared_ptr<Comment> comment = expression.attachedComment ? std::make_shared<Comment>(*expression.attachedComment, scope) : nullptr;
 			const auto& arrayLiteral = static_cast<const ArrayLiteral&>(expression);
 			std::vector<double> array;
 			array.reserve(arrayLiteral.values.size());
@@ -345,31 +377,31 @@ void Interpret(std::string_view filePrefix, std::vector<std::unique_ptr<Statemen
 				array.push_back(static_cast<const NumberValue&>(*value).value);
 			}
 
-			out = std::make_unique<ArrayRef>(std::make_shared<std::vector<double>>(std::move(array)));
+			out = std::make_unique<ArrayRef>(std::make_shared<std::vector<double>>(std::move(array)), std::move(comment));
 			return Error::None;
 		}
 		case ExpressionTag::FunctionLiteral:
 		{
+			std::shared_ptr<Comment> comment = expression.attachedComment ? std::make_shared<Comment>(*expression.attachedComment, scope) : nullptr;
 			FunctionLiteral& functionLiteral = static_cast<FunctionLiteral&>(expression);
-			/*
-			 * NOTE Here is the only place when we modify original parse tree by moving statements vector from the FunctionLiteral to
-			 * Function. Maybe a deep clone, like with Value::make_uniqe should be implemented. Or maybe not, because it's not like I'm
-			 * going to need the parse tree later. Anyway, might as well move args.
-			 */
-			out = std::make_unique<FunctionRef>(std::make_shared<Function>(std::move(functionLiteral.args), std::move(functionLiteral.statements)));
+			out = std::make_unique<FunctionRef>(std::make_shared<Function>(functionLiteral.args, functionLiteral.statements, scope), std::move(comment));
 			return Error::None;
 		}
 		case ExpressionTag::Identifier:
 		{
 			const Identifier& identifier = static_cast<const Identifier&>(expression);
 			std::unique_ptr<Value>* value;
-			if (!scope.TryGetValue(identifier.name, value))
+			if (!scope->TryGetValue(identifier.name, value))
 			{
-				out = std::make_unique<Value>(TypeTag::Void);
+				out = std::make_unique<Value>(TypeTag::Void, nullptr);
 			}
 			else
 			{
 				out = (*value)->make_clone();
+			}
+			if (expression.attachedComment)
+			{
+				out->attachedComment = std::make_shared<Comment>(*expression.attachedComment, scope);
 			}
 			return Error::None;
 		}
@@ -390,6 +422,10 @@ void Interpret(std::string_view filePrefix, std::vector<std::unique_ptr<Statemen
 
 				auto& boolValue = static_cast<BoolValue&>(*out);
 				boolValue.value = !boolValue.value;
+				if (expression.attachedComment)
+				{
+					out->attachedComment = std::make_shared<Comment>(*expression.attachedComment, scope);
+				}
 				return Error::None;
 			}
 			case TokenTag::KeyNeg:
@@ -401,11 +437,19 @@ void Interpret(std::string_view filePrefix, std::vector<std::unique_ptr<Statemen
 
 				auto& numberValue = static_cast<NumberValue&>(*out);
 				numberValue.value = -numberValue.value;
+				if (expression.attachedComment)
+				{
+					out->attachedComment = std::make_shared<Comment>(*expression.attachedComment, scope);
+				}
 				return Error::None;
 			}
 			case TokenTag::KeyVoid:
 				// NOTE We don't skip evaluating voiding expression to allow side effects to happen.
-				out = std::make_unique<Value>(TypeTag::Void);
+				out = std::make_unique<Value>(TypeTag::Void, out->attachedComment);
+				if (expression.attachedComment)
+				{
+					out->attachedComment = std::make_shared<Comment>(*expression.attachedComment, scope);
+				}
 				return Error::None;
 			case TokenTag::Hash:
 			{
@@ -415,7 +459,11 @@ void Interpret(std::string_view filePrefix, std::vector<std::unique_ptr<Statemen
 				}
 
 				const auto& arrayRef = static_cast<const ArrayRef&>(*out);
-				out = std::make_unique<NumberValue>(static_cast<double>(arrayRef.array->size()));
+				out = std::make_unique<NumberValue>(static_cast<double>(arrayRef.array->size()), arrayRef.attachedComment);
+				if (expression.attachedComment)
+				{
+					out->attachedComment = std::make_shared<Comment>(*expression.attachedComment, scope);
+				}
 				return Error::None;
 			}
 			default:
@@ -443,6 +491,9 @@ void Interpret(std::string_view filePrefix, std::vector<std::unique_ptr<Statemen
 				if (b->type != TypeTag::Number) return Error("Arithmetic operand is not a number.", binaryOp.b->pos);
 
 				numberValue.value += static_cast<const NumberValue&>(*b).value;
+				if (expression.attachedComment) out->attachedComment = std::make_shared<Comment>(*expression.attachedComment, scope);
+				else if (out->attachedComment && b->attachedComment) out->attachedComment = nullptr;
+				else if (b->attachedComment) out->attachedComment = b->attachedComment;
 				return Error::None;
 			}
 			case TokenTag::Minus:
@@ -456,6 +507,9 @@ void Interpret(std::string_view filePrefix, std::vector<std::unique_ptr<Statemen
 				if (b->type != TypeTag::Number) return Error("Arithmetic operand is not a number.", binaryOp.b->pos);
 
 				numberValue.value -= static_cast<const NumberValue&>(*b).value;
+				if (expression.attachedComment) out->attachedComment = std::make_shared<Comment>(*expression.attachedComment, scope);
+				else if (out->attachedComment && b->attachedComment) out->attachedComment = nullptr;
+				else if (b->attachedComment) out->attachedComment = b->attachedComment;
 				return Error::None;
 			}
 			case TokenTag::Star:
@@ -469,6 +523,9 @@ void Interpret(std::string_view filePrefix, std::vector<std::unique_ptr<Statemen
 				if (b->type != TypeTag::Number) return Error("Arithmetic operand is not a number.", binaryOp.b->pos);
 
 				numberValue.value *= static_cast<const NumberValue&>(*b).value;
+				if (expression.attachedComment) out->attachedComment = std::make_shared<Comment>(*expression.attachedComment, scope);
+				else if (out->attachedComment && b->attachedComment) out->attachedComment = nullptr;
+				else if (b->attachedComment) out->attachedComment = b->attachedComment;
 				return Error::None;
 			}
 			case TokenTag::Slash:
@@ -482,6 +539,9 @@ void Interpret(std::string_view filePrefix, std::vector<std::unique_ptr<Statemen
 				if (b->type != TypeTag::Number) return Error("Arithmetic operand is not a number.", binaryOp.b->pos);
 
 				numberValue.value /= static_cast<const NumberValue&>(*b).value;
+				if (expression.attachedComment) out->attachedComment = std::make_shared<Comment>(*expression.attachedComment, scope);
+				else if (out->attachedComment && b->attachedComment) out->attachedComment = nullptr;
+				else if (b->attachedComment) out->attachedComment = b->attachedComment;
 				return Error::None;
 			}
 			case TokenTag::Percent:
@@ -496,6 +556,9 @@ void Interpret(std::string_view filePrefix, std::vector<std::unique_ptr<Statemen
 
 				const double bValue = static_cast<const NumberValue&>(*b).value;
 				numberValue.value = fmod(fmod(numberValue.value, bValue) + bValue, bValue);
+				if (expression.attachedComment) out->attachedComment = std::make_shared<Comment>(*expression.attachedComment, scope);
+				else if (out->attachedComment && b->attachedComment) out->attachedComment = nullptr;
+				else if (b->attachedComment) out->attachedComment = b->attachedComment;
 				return Error::None;
 			}
 			case TokenTag::KeyAnd:
@@ -512,6 +575,9 @@ void Interpret(std::string_view filePrefix, std::vector<std::unique_ptr<Statemen
 				if (b->type != TypeTag::Bool) return Error("Logic operand is not boolean.", binaryOp.b->pos);
 
 				boolValue.value = boolValue.value && static_cast<const BoolValue&>(*b).value;
+				if (expression.attachedComment) out->attachedComment = std::make_shared<Comment>(*expression.attachedComment, scope);
+				else if (out->attachedComment && b->attachedComment) out->attachedComment = nullptr;
+				else if (b->attachedComment) out->attachedComment = b->attachedComment;
 				return Error::None;
 			}
 			case TokenTag::KeyOr:
@@ -528,6 +594,9 @@ void Interpret(std::string_view filePrefix, std::vector<std::unique_ptr<Statemen
 				if (b->type != TypeTag::Bool) return Error("Logic operand is not boolean.", binaryOp.b->pos);
 
 				boolValue.value = boolValue.value || static_cast<const BoolValue&>(*b).value;
+				if (expression.attachedComment) out->attachedComment = std::make_shared<Comment>(*expression.attachedComment, scope);
+				else if (out->attachedComment && b->attachedComment) out->attachedComment = nullptr;
+				else if (b->attachedComment) out->attachedComment = b->attachedComment;
 				return Error::None;
 			}
 			case TokenTag::KeyXor:
@@ -541,6 +610,9 @@ void Interpret(std::string_view filePrefix, std::vector<std::unique_ptr<Statemen
 				if (b->type != TypeTag::Bool) return Error("Logic operand is not boolean.", binaryOp.b->pos);
 
 				boolValue.value = boolValue.value != static_cast<const BoolValue&>(*b).value;
+				if (expression.attachedComment) out->attachedComment = std::make_shared<Comment>(*expression.attachedComment, scope);
+				else if (out->attachedComment && b->attachedComment) out->attachedComment = nullptr;
+				else if (b->attachedComment) out->attachedComment = b->attachedComment;
 				return Error::None;
 			}
 			case TokenTag::LessThan:
@@ -551,7 +623,10 @@ void Interpret(std::string_view filePrefix, std::vector<std::unique_ptr<Statemen
 				TRY(Evaluate(*binaryOp.b, scope, b));
 				if (b->type != TypeTag::Number) return Error("Arithmetic operand is not a number.", binaryOp.b->pos);
 
-				out = std::make_unique<BoolValue>(static_cast<NumberValue&>(*out).value < static_cast<const NumberValue&>(*b).value);
+				out = std::make_unique<BoolValue>(static_cast<NumberValue&>(*out).value < static_cast<const NumberValue&>(*b).value, out->attachedComment);
+				if (expression.attachedComment) out->attachedComment = std::make_shared<Comment>(*expression.attachedComment, scope);
+				else if (out->attachedComment && b->attachedComment) out->attachedComment = nullptr;
+				else if (b->attachedComment) out->attachedComment = b->attachedComment;
 				return Error::None;
 			}
 			case TokenTag::GreaterThan:
@@ -562,7 +637,10 @@ void Interpret(std::string_view filePrefix, std::vector<std::unique_ptr<Statemen
 				TRY(Evaluate(*binaryOp.b, scope, b));
 				if (b->type != TypeTag::Number) return Error("Arithmetic operand is not a number.", binaryOp.b->pos);
 
-				out = std::make_unique<BoolValue>(static_cast<NumberValue&>(*out).value > static_cast<const NumberValue&>(*b).value);
+				out = std::make_unique<BoolValue>(static_cast<NumberValue&>(*out).value > static_cast<const NumberValue&>(*b).value, out->attachedComment);
+				if (expression.attachedComment) out->attachedComment = std::make_shared<Comment>(*expression.attachedComment, scope);
+				else if (out->attachedComment && b->attachedComment) out->attachedComment = nullptr;
+				else if (b->attachedComment) out->attachedComment = b->attachedComment;
 				return Error::None;
 			}
 			case TokenTag::LessEquals:
@@ -573,7 +651,10 @@ void Interpret(std::string_view filePrefix, std::vector<std::unique_ptr<Statemen
 				TRY(Evaluate(*binaryOp.b, scope, b));
 				if (b->type != TypeTag::Number) return Error("Arithmetic operand is not a number.", binaryOp.b->pos);
 
-				out = std::make_unique<BoolValue>(static_cast<NumberValue&>(*out).value <= static_cast<const NumberValue&>(*b).value);
+				out = std::make_unique<BoolValue>(static_cast<NumberValue&>(*out).value <= static_cast<const NumberValue&>(*b).value, out->attachedComment);
+				if (expression.attachedComment) out->attachedComment = std::make_shared<Comment>(*expression.attachedComment, scope);
+				else if (out->attachedComment && b->attachedComment) out->attachedComment = nullptr;
+				else if (b->attachedComment) out->attachedComment = b->attachedComment;
 				return Error::None;
 			}
 			case TokenTag::GreaterEquals:
@@ -584,7 +665,10 @@ void Interpret(std::string_view filePrefix, std::vector<std::unique_ptr<Statemen
 				TRY(Evaluate(*binaryOp.b, scope, b));
 				if (b->type != TypeTag::Number) return Error("Arithmetic operand is not a number.", binaryOp.b->pos);
 
-				out = std::make_unique<BoolValue>(static_cast<NumberValue&>(*out).value >= static_cast<const NumberValue&>(*b).value);
+				out = std::make_unique<BoolValue>(static_cast<NumberValue&>(*out).value >= static_cast<const NumberValue&>(*b).value, out->attachedComment);
+				if (expression.attachedComment) out->attachedComment = std::make_shared<Comment>(*expression.attachedComment, scope);
+				else if (out->attachedComment && b->attachedComment) out->attachedComment = nullptr;
+				else if (b->attachedComment) out->attachedComment = b->attachedComment;
 				return Error::None;
 			}
 			case TokenTag::EqualsEquals:
@@ -595,7 +679,10 @@ void Interpret(std::string_view filePrefix, std::vector<std::unique_ptr<Statemen
 				TRY(Evaluate(*binaryOp.b, scope, b));
 				if (b->type != TypeTag::Number) return Error("Arithmetic operand is not a number.", binaryOp.b->pos);
 
-				out = std::make_unique<BoolValue>(static_cast<NumberValue&>(*out).value == static_cast<const NumberValue&>(*b).value);
+				out = std::make_unique<BoolValue>(static_cast<NumberValue&>(*out).value == static_cast<const NumberValue&>(*b).value, out->attachedComment);
+				if (expression.attachedComment) out->attachedComment = std::make_shared<Comment>(*expression.attachedComment, scope);
+				else if (out->attachedComment && b->attachedComment) out->attachedComment = nullptr;
+				else if (b->attachedComment) out->attachedComment = b->attachedComment;
 				return Error::None;
 			}
 			case TokenTag::NotEquals:
@@ -606,7 +693,10 @@ void Interpret(std::string_view filePrefix, std::vector<std::unique_ptr<Statemen
 				TRY(Evaluate(*binaryOp.b, scope, b));
 				if (b->type != TypeTag::Number) return Error("Arithmetic operand is not a number.", binaryOp.b->pos);
 
-				out = std::make_unique<BoolValue>(static_cast<NumberValue&>(*out).value != static_cast<const NumberValue&>(*b).value);
+				out = std::make_unique<BoolValue>(static_cast<NumberValue&>(*out).value != static_cast<const NumberValue&>(*b).value, out->attachedComment);
+				if (expression.attachedComment) out->attachedComment = std::make_shared<Comment>(*expression.attachedComment, scope);
+				else if (out->attachedComment && b->attachedComment) out->attachedComment = nullptr;
+				else if (b->attachedComment) out->attachedComment = b->attachedComment;
 				return Error::None;
 			}
 			case TokenTag::At:
@@ -626,7 +716,10 @@ void Interpret(std::string_view filePrefix, std::vector<std::unique_ptr<Statemen
 					return Error{Format("Array index %zu out of bounds (array length is %zu).", indexValue, array.array->size()), binaryOp.b->pos};
 				}
 
-				out = std::make_unique<NumberValue>((*array.array)[indexValue]);
+				out = std::make_unique<NumberValue>((*array.array)[indexValue], out->attachedComment);
+				if (expression.attachedComment) out->attachedComment = std::make_shared<Comment>(*expression.attachedComment, scope);
+				else if (out->attachedComment && b->attachedComment) out->attachedComment = nullptr;
+				else if (b->attachedComment) out->attachedComment = b->attachedComment;
 				return Error::None;
 			}
 			default:
@@ -647,23 +740,23 @@ void Interpret(std::string_view filePrefix, std::vector<std::unique_ptr<Statemen
 			const auto& functionRef = static_cast<const FunctionRef&>(*functionValue);
 			const Function& function = *functionRef.function;
 
-			// TODO Partial function application.
-			if (function.args.size() != call.values.size())
+			if (function.args->size() != call.values.size())
 			{
-				return Error(Format("Provided %zu argument(s) for function that takes %zu.", call.values.size(), function.args.size()), call.pos);
+				return Error(Format("Provided %zu argument(s) for function that takes %zu.", call.values.size(), function.args->size()), call.pos);
 			}
 
-			Scope innerScope;
+			std::shared_ptr<Scope> innerScope = std::make_shared<Scope>();
 			const size_t n = call.values.size();
 			for (size_t i = 0; i < n; ++i)
 			{
 				Expression& argExpression = *call.values[i];
 				std::unique_ptr<Value> argValue;
 				TRY(Evaluate(argExpression, scope, argValue));
-				innerScope.SetValue(function.args[i], std::move(argValue));
+				innerScope->SetValue((*function.args)[i], std::move(argValue));
 			}
+			innerScope->parent_scope = function.closure;
 
-			for (const auto& statement : function.statements)
+			for (const auto& statement : *function.statements)
 			{
 				TRY(RunStatement(*statement, innerScope));
 				if (unwindToken.unwind)
@@ -673,29 +766,55 @@ void Interpret(std::string_view filePrefix, std::vector<std::unique_ptr<Statemen
 					return Error::None;
 				}
 			}
-			out = std::make_unique<Value>(TypeTag::Void);
+			out = std::make_unique<Value>(TypeTag::Void, nullptr);
 			return Error::None;
 		}
 	}
 	return Error{"Internal error: Unrecognized expression.", expression.pos};
 }
 
-static void PrintValue(const Value& value)
+static void PrintValue(const Value& value, const bool inComment)
 {
+	if (!inComment && value.attachedComment)
+	{
+		std::cout << "/*";
+		for (const auto& node : value.attachedComment->token->nodes)
+		{
+			switch(node->tag)
+			{
+				case CommentNodeTag::Text: std::cout << static_cast<const CommentTextNode&>(*node).text; break;
+				case CommentNodeTag::Identifier:
+				{
+					const auto& identifierNode = static_cast<const CommentIdentifierNode&>(*node);
+					std::unique_ptr<Value>* referencedValue;
+					if (!value.attachedComment->scope->TryGetValue(identifierNode.name, referencedValue))
+					{
+						std::cout << "void";
+					}
+					else
+					{
+						PrintValue(**referencedValue, true);
+					}
+				}
+			}
+		}
+		std::cout << "*/\n";
+	}
+
 	switch(value.type)
 	{
 	case TypeTag::Void:
-		break;
+		return;
 	case TypeTag::Bool:
 	{
 		auto const& boolValue = static_cast<const BoolValue&>(value);
-		std::cout << (boolValue.value ? "true\n" : "false\n");
+		std::cout << (boolValue.value ? "true" : "false");
 		break;
 	}
 	case TypeTag::Number:
 	{
 		auto const& numberValue = static_cast<const NumberValue&>(value);
-		std::cout << numberValue.value << '\n';
+		std::cout << numberValue.value;
 		break;
 	}
 	case TypeTag::Array:
@@ -709,7 +828,7 @@ static void PrintValue(const Value& value)
 			std::cout << array[i];
 			if (i < n - 1) std::cout << ' ';
 		}
-		std::cout << "]\n";
+		std::cout << "]";
 		break;
 	}
 	case TypeTag::Function:
@@ -717,14 +836,15 @@ static void PrintValue(const Value& value)
 		auto const& functionRef = static_cast<const FunctionRef&>(value);
 		const Function& function = *functionRef.function;
 		std::cout << "fn (";
-		const size_t n = function.args.size();
+		const size_t n = function.args->size();
 		for (size_t i = 0; i < n; ++i)
 		{
-			std::cout << function.args[i];
+			std::cout << (*function.args)[i];
 			if (i < n - 1) std::cout << ' ';
 		}
-		std::cout << ")\n";
+		std::cout << ")";
 		break;
 	}
 	}
+	if (!inComment) std::cout << '\n';
 }

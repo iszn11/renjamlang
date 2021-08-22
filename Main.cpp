@@ -29,6 +29,11 @@ int main(int argc, char* argv[])
 			<< "Expected 0-1 arguments, got " << (argc - 1) << '\n';
 		return 1;
 	}
+
+	// Remove unused function warnings.
+	(void)PrintLexResults;
+	(void)PrintExpression;
+	(void)PrintParseResults;
 }
 
 static int RunFile(const char* const filepath)
@@ -167,11 +172,11 @@ static void PrintLexResults(const std::string_view filePrefix, const std::vector
 				{
 					switch (node->tag)
 					{
-						case CommentNodeTag::Text: std::cout << "\tText " << static_cast<CommentTextNode*>(node.get())->text; break;
-						case CommentNodeTag::Expression: std::cout << "\tExpression"; break; // TODO Print tokens
+						case CommentNodeTag::Text: std::cout << "\tText " << static_cast<const CommentTextNode&>(*node).text << '\n'; break;
+						case CommentNodeTag::Identifier: std::cout << "\tIdentifier " << static_cast<const CommentIdentifierNode&>(*node).name << '\n'; break;
 					}
 				}
-				break;
+				continue;
 			}
 			case TokenTag::Eof: std::cout << "EOF"; break;
 		}
@@ -204,14 +209,14 @@ static void PrintExpression(const std::string_view filePrefix, const std::unique
 	{
 		auto function = static_cast<FunctionLiteral*>(expression.get());
 		std::cout << "Function (";
-		const size_t n = function->args.size();
+		const size_t n = function->args->size();
 		for (size_t i = 0; i < n; ++i)
 		{
-			std::cout << function->args[i];
+			std::cout << (*function->args)[i];
 			if (i < n - 1) std::cout << ' ';
 		}
 		std::cout << ")\n";
-		PrintParseResults(filePrefix, function->statements, level + 1);
+		PrintParseResults(filePrefix, *function->statements, level + 1);
 		return;
 	}
 	case ExpressionTag::Identifier:

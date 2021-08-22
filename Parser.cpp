@@ -8,7 +8,10 @@ using Statements = std::vector<std::unique_ptr<Statement>>;
 static bool success;
 static std::unique_ptr<Token>* tokenPtr;
 static std::unique_ptr<Token>* tokenEnd;
+static std::unique_ptr<CommentToken> lastComment;
 
+static void EatComments();
+static std::unique_ptr<CommentToken> ConsumeLastComment();
 static bool EatToken(const TokenTag tag);
 static bool IsToken(const TokenTag tag);
 static TokenTag GetTag();
@@ -41,6 +44,22 @@ static CodePos GetPos();
 	}
 
 	return Error::None;
+}
+
+static void EatComments()
+{
+	while (IsToken(TokenTag::Comment))
+	{
+		lastComment = static_cast<const CommentToken&>(**tokenPtr).make_clone();
+		tokenPtr += 1;
+	}
+}
+
+static std::unique_ptr<CommentToken> ConsumeLastComment()
+{
+	std::unique_ptr<CommentToken> ret = std::move(lastComment);
+	lastComment = nullptr;
+	return ret;
 }
 
 static bool EatToken(const TokenTag tag)
@@ -77,6 +96,8 @@ static CodePos GetPos()
 
 [[nodiscard]] static Error ParseExpression(std::unique_ptr<Expression>& out)
 {
+	EatComments();
+
 	const CodePos pos = GetPos();
 
 	TRY(ParseExpressionInternal(out));
@@ -94,7 +115,7 @@ static CodePos GetPos()
 			values.emplace_back(std::move(value));
 		}
 
-		std::unique_ptr<Expression> call = std::make_unique<Call>(std::move(out), std::move(values), pos);
+		std::unique_ptr<Expression> call = std::make_unique<Call>(std::move(out), std::move(values), pos, nullptr);
 		call.swap(out);
 	}
 
@@ -110,12 +131,14 @@ static CodePos GetPos()
 	{
 		// literals
 
-		case TokenTag::KeyFalse: out = std::make_unique<Expression>(ExpressionTag::False, pos); tokenPtr += 1; return Error::None;
-		case TokenTag::KeyTrue: out = std::make_unique<Expression>(ExpressionTag::True, pos); tokenPtr += 1; return Error::None;
-		case TokenTag::Number: out = std::make_unique<NumberLiteral>(GetToken<NumberToken>()->value, pos); tokenPtr += 1; return Error::None;
+		case TokenTag::KeyFalse: out = std::make_unique<Expression>(ExpressionTag::False, pos, ConsumeLastComment()); tokenPtr += 1; return Error::None;
+		case TokenTag::KeyTrue: out = std::make_unique<Expression>(ExpressionTag::True, pos, ConsumeLastComment()); tokenPtr += 1; return Error::None;
+		case TokenTag::Number: out = std::make_unique<NumberLiteral>(GetToken<NumberToken>()->value, pos, ConsumeLastComment()); tokenPtr += 1; return Error::None;
 		case TokenTag::BracketOpen:
 		{
 			tokenPtr += 1;
+
+			std::unique_ptr<CommentToken> attachedComment = ConsumeLastComment();
 
 			std::vector<std::unique_ptr<Expression>> values;
 			while (!EatToken(TokenTag::BracketClose))
@@ -125,12 +148,14 @@ static CodePos GetPos()
 				values.emplace_back(std::move(value));
 			}
 
-			out = std::make_unique<ArrayLiteral>(std::move(values), pos);
+			out = std::make_unique<ArrayLiteral>(std::move(values), pos, std::move(attachedComment));
 			return Error::None;
 		}
 		case TokenTag::KeyFn:
 		{
 			tokenPtr += 1;
+
+			std::unique_ptr<CommentToken> attachedComment = ConsumeLastComment();
 
 			if (!EatToken(TokenTag::ParenOpen))
 			{
@@ -156,7 +181,7 @@ static CodePos GetPos()
 				TRY(ParseStatement(statements));
 			}
 
-			out = std::make_unique<FunctionLiteral>(std::move(args), std::move(statements), pos);
+			out = std::make_unique<FunctionLiteral>(std::make_shared<std::vector<std::string>>(std::move(args)), std::make_shared<std::vector<std::unique_ptr<Statement>>>(std::move(statements)), pos, std::move(attachedComment));
 			return Error::None;
 		}
 
@@ -167,7 +192,7 @@ static CodePos GetPos()
 			const std::string& name = GetToken<IdentifierToken>()->name;
 			tokenPtr += 1;
 
-			out = std::make_unique<Identifier>(name, pos);
+			out = std::make_unique<Identifier>(name, pos, ConsumeLastComment());
 			return Error::None;
 		}
 
@@ -180,9 +205,11 @@ static CodePos GetPos()
 		{
 			tokenPtr += 1;
 
+			std::unique_ptr<CommentToken> attachedComment = ConsumeLastComment();
+
 			std::unique_ptr<Expression> a;
 			TRY(ParseExpression(a));
-			out = std::make_unique<UnaryOperation>(tag, std::move(a), pos);
+			out = std::make_unique<UnaryOperation>(tag, std::move(a), pos, std::move(attachedComment));
 			return Error::None;
 		}
 
@@ -206,11 +233,13 @@ static CodePos GetPos()
 		{
 			tokenPtr += 1;
 
+			std::unique_ptr<CommentToken> attachedComment = ConsumeLastComment();
+
 			std::unique_ptr<Expression> a;
 			std::unique_ptr<Expression> b;
 			TRY(ParseExpression(a));
 			TRY(ParseExpression(b));
-			out = std::make_unique<BinaryOperation>(tag, std::move(a), std::move(b), pos);
+			out = std::make_unique<BinaryOperation>(tag, std::move(a), std::move(b), pos, std::move(attachedComment));
 			return Error::None;
 		}
 
@@ -221,6 +250,8 @@ static CodePos GetPos()
 
 [[nodiscard]] static Error ParseStatement(Statements& statements)
 {
+	EatComments();
+
 	Error error = ParseIf(statements);
 	if (error || success) return error;
 
@@ -255,6 +286,8 @@ static CodePos GetPos()
 		success = false;
 		return Error::None;
 	}
+
+	std::unique_ptr<CommentToken> attachedComment = ConsumeLastComment();
 
 	std::vector<ConditionBlock> elifChain;
 	std::vector<std::unique_ptr<Statement>> elseBlock;
@@ -291,7 +324,7 @@ static CodePos GetPos()
 	}
 
 	success = true;
-	statements.emplace_back(std::make_unique<IfStatement>(std::move(elifChain), std::move(elseBlock), pos));
+	statements.emplace_back(std::make_unique<IfStatement>(std::move(elifChain), std::move(elseBlock), pos, std::move(attachedComment)));
 	return Error::None;
 }
 
@@ -305,6 +338,8 @@ static CodePos GetPos()
 		return Error::None;
 	}
 
+	std::unique_ptr<CommentToken> attachedComment = ConsumeLastComment();
+
 	std::unique_ptr<Expression> condition;
 	TRY(ParseExpression(condition));
 
@@ -315,7 +350,7 @@ static CodePos GetPos()
 	}
 
 	success = true;
-	statements.emplace_back(std::make_unique<WhileStatement>(std::move(condition), std::move(innerStatements), pos));
+	statements.emplace_back(std::make_unique<WhileStatement>(std::move(condition), std::move(innerStatements), pos, std::move(attachedComment)));
 	return Error::None;
 }
 
@@ -329,6 +364,8 @@ static CodePos GetPos()
 		return Error::None;
 	}
 
+	std::unique_ptr<CommentToken> attachedComment = ConsumeLastComment();
+
 	// assignment
 	if (IsToken(TokenTag::Identifier))
 	{
@@ -339,7 +376,7 @@ static CodePos GetPos()
 		TRY(ParseExpression(value));
 
 		success = true;
-		statements.emplace_back(std::make_unique<AssignmentStatement>(name, std::move(value), pos));
+		statements.emplace_back(std::make_unique<AssignmentStatement>(name, std::move(value), pos, std::move(attachedComment)));
 		return Error::None;
 	}
 	// array write
@@ -361,7 +398,7 @@ static CodePos GetPos()
 		TRY(ParseExpression(value));
 
 		success = true;
-		statements.emplace_back(std::make_unique<ArrayWriteStatement>(name, std::move(index), std::move(value), pos));
+		statements.emplace_back(std::make_unique<ArrayWriteStatement>(name, std::move(index), std::move(value), pos, std::move(attachedComment)));
 		return Error::None;
 	}
 	else
@@ -380,6 +417,8 @@ static CodePos GetPos()
 		return Error::None;
 	}
 
+	std::unique_ptr<CommentToken> attachedComment = ConsumeLastComment();
+
 	if (!IsToken(TokenTag::Identifier))
 	{
 		Error{"Expected identifier in array push. NOTE: Array push to expression is not supported.", GetPos()};
@@ -391,7 +430,7 @@ static CodePos GetPos()
 	TRY(ParseExpression(value));
 
 	success = true;
-	statements.emplace_back(std::make_unique<ArrayPushStatement>(name, std::move(value), pos));
+	statements.emplace_back(std::make_unique<ArrayPushStatement>(name, std::move(value), pos, std::move(attachedComment)));
 	return Error::None;
 }
 
@@ -405,6 +444,8 @@ static CodePos GetPos()
 		return Error::None;
 	}
 
+	std::unique_ptr<CommentToken> attachedComment = ConsumeLastComment();
+
 	if (!IsToken(TokenTag::Identifier))
 	{
 		Error{"Expected identifier in array pop. NOTE: Array pop of expression is not supported.", GetPos()};
@@ -413,7 +454,7 @@ static CodePos GetPos()
 	tokenPtr += 1;
 
 	success = true;
-	statements.emplace_back(std::make_unique<ArrayPopStatement>(name, pos));
+	statements.emplace_back(std::make_unique<ArrayPopStatement>(name, pos, std::move(attachedComment)));
 	return Error::None;
 }
 
@@ -427,11 +468,13 @@ static CodePos GetPos()
 		return Error::None;
 	}
 
+	std::unique_ptr<CommentToken> attachedComment = ConsumeLastComment();
+
 	std::unique_ptr<Expression> value;
 	TRY(ParseExpression(value));
 
 	success = true;
-	statements.emplace_back(std::make_unique<ExpressionStatement>(StatementTag::Return, std::move(value), pos));
+	statements.emplace_back(std::make_unique<ExpressionStatement>(StatementTag::Return, std::move(value), pos, std::move(attachedComment)));
 	return Error::None;
 }
 
@@ -439,10 +482,12 @@ static CodePos GetPos()
 {
 	const CodePos pos = GetPos();
 
+	// NOTE We don't consume comment here, expression itself will hold it.
+
 	std::unique_ptr<Expression> value;
 	TRY(ParseExpression(value));
 
 	success = true;
-	statements.emplace_back(std::make_unique<ExpressionStatement>(StatementTag::Expression, std::move(value), pos));
+	statements.emplace_back(std::make_unique<ExpressionStatement>(StatementTag::Expression, std::move(value), pos, nullptr));
 	return Error::None;
 }

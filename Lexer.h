@@ -60,7 +60,7 @@ enum class TokenTag {
 
 enum class CommentNodeTag {
 	Text,
-	Expression,
+	Identifier,
 };
 
 struct Token {
@@ -83,33 +83,41 @@ struct IdentifierToken : public Token {
 	IdentifierToken(std::string name, const CodePos pos) : Token{TokenTag::Identifier, pos}, name{std::move(name)} {}
 };
 
-struct CommentNode;
+struct CommentNode {
+	CommentNodeTag tag;
+
+	CommentNode(const CommentNodeTag tag) : tag{tag} {}
+	virtual ~CommentNode() = default;
+
+	virtual std::unique_ptr<CommentNode> make_clone() const = 0;
+};
 
 struct CommentToken : public Token {
 	std::vector<std::unique_ptr<CommentNode>> nodes;
 
 	CommentToken(std::vector<std::unique_ptr<CommentNode>> nodes, const CodePos pos) : Token{TokenTag::Comment, pos}, nodes{std::move(nodes)} {}
+
+	std::unique_ptr<CommentToken> make_clone() const
+	{
+		std::vector<std::unique_ptr<CommentNode>> nodes_clone;
+		nodes_clone.reserve(nodes.size());
+		for (const auto& node : nodes) nodes_clone.push_back(node->make_clone());
+		return std::make_unique<CommentToken>(std::move(nodes_clone), pos);
+	};
 };
-
-struct CommentNode {
-	CommentNodeTag tag;
-
-	CommentNode(const CommentNodeTag tag) : tag{tag} {}
-	virtual ~CommentNode() = 0;
-};
-
-inline CommentNode::~CommentNode() {}
 
 struct CommentTextNode : public CommentNode {
 	std::string text;
 
 	CommentTextNode(std::string text) : CommentNode{CommentNodeTag::Text}, text{text} {}
+	std::unique_ptr<CommentNode> make_clone() const override { return std::make_unique<CommentTextNode>(text); }
 };
 
-struct CommentExpressionNode : public CommentNode {
-	std::vector<std::unique_ptr<Token>> tokens;
+struct CommentIdentifierNode : public CommentNode {
+	std::string name;
 
-	CommentExpressionNode(std::vector<std::unique_ptr<Token>> tokens) : CommentNode{CommentNodeTag::Expression}, tokens{std::move(tokens)} {}
+	CommentIdentifierNode(std::string name) : CommentNode{CommentNodeTag::Identifier}, name{std::move(name)} {}
+	std::unique_ptr<CommentNode> make_clone() const override { return std::make_unique<CommentIdentifierNode>(name); }
 };
 
 [[nodiscard]] Error Lex(const char* code, std::vector<std::unique_ptr<Token>>& tokens);

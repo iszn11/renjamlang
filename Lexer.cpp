@@ -196,10 +196,9 @@ static bool IsDigit(const char c)
 	const CodePos pos = ptr.pos;
 
 	ptr += 2;
-	SkipWhitespace(ptr);
 
-	const char* const commentStart = &ptr[0];
-	size_t commentLength = 0;
+	std::vector<std::unique_ptr<CommentNode>> nodes;
+	std::string text;
 
 	while (true)
 	{
@@ -208,27 +207,67 @@ static bool IsDigit(const char c)
 		case '\0':
 			return Error{Format("Unexpected EOF, missing */ to close /* (at line %zu, column %zu).", pos.line, pos.col), ptr.pos};
 		case '\n':
+			text.push_back('\n');
 			ptr += 1;
 			SkipWhitespace(ptr);
 			break;
+		case '$':
+		{
+			ptr += 1;
+
+			if (ptr[0] == '$')
+			{
+				text.push_back('$');
+				ptr += 1;
+				break;
+			}
+
+			std::unique_ptr<Token> identifier;
+			const CodePos identifierPos = ptr.pos;
+			TRY(LexIdentifierOrKeyword(ptr, identifier));
+			if (!success)
+			{
+				return Error{"Sequence after \"$\" is not an identifier", identifierPos};
+			}
+			else if (identifier->tag != TokenTag::Identifier)
+			{
+				return Error{"Sequence after \"$\" is a reserved keyword, so it's not an identifier", identifierPos};
+			}
+
+			if (!text.empty())
+			{
+				nodes.emplace_back(std::make_unique<CommentTextNode>(std::move(text)));
+				text.clear();
+			}
+
+			nodes.emplace_back(std::make_unique<CommentIdentifierNode>(std::move(static_cast<const IdentifierToken&>(*identifier).name)));
+			break;
+		}
 		case '*':
 		{
 			ptr += 1;
-			if (ptr[0] != '/') break;
 
+			if (ptr[0] != '/')
+			{
+				text.push_back('*');
+				ptr += 1;
+				break;
+			}
 			ptr += 1;
 
-			std::vector<std::unique_ptr<CommentNode>> nodes;
-			nodes.emplace_back(std::make_unique<CommentTextNode>(std::string{commentStart, commentLength})); // TODO Wrong length
+			if (!text.empty())
+			{
+				nodes.emplace_back(std::make_unique<CommentTextNode>(std::move(text)));
+			}
 
 			out = std::make_unique<CommentToken>(std::move(nodes), pos);
 			success = true;
 			return Error::None;
 		}
 		default:
+			text.push_back(ptr[0]);
 			ptr += 1;
-			commentLength += 1;
-			continue;
+			break;
 		}
 	}
 }

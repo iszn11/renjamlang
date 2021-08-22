@@ -5,14 +5,16 @@
   = i 2
   while <= * i i a
     if == % a i 0
+      /* $a is not prime (divisible by $i). */
       return false
     end
     = i + i 1
   end
+  /* $a is prime. */
   return true
 end
 
-= i 1 while <= i 100
-  if isPrime (i) i end
+= i 2 while <= i 10
+  isPrime (i)
   = i + i 1
 end

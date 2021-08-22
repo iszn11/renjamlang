@@ -22,6 +22,7 @@
     if == @ A i 1 push out i end
     = i + i 1
   end
+  /* Prime numbers from 2 to $n. */
   return out
 end
 
