@@ -1,0 +1,24 @@
+= add fn (a b)
+  /* Result of adding $a and $b. */
+  return + a b
+end
+
+add (3 8)
+add (7 4)
+
+= sort fn (array)
+  /* Length of $array. */
+  = n # array
+  = j - n 2 while >= j 0
+    = x @ a j
+    = i + j 1
+    while and < i n > x @ a i
+      = @ a - i 1 @ a i
+      = i + i 1
+    end
+    = @ a - i 1 x
+    = j - j 1
+    /* Array partially sorted, j=$j. */
+    array
+  end
+end

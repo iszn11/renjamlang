@@ -6,21 +6,33 @@
 #include <cstdio>
 #include <iostream>
 
+static int RunFile(const char* filepath);
+static int Repl();
 static void PrintLexResults(std::string_view filePrefix, const std::vector<std::unique_ptr<Token>>& tokens);
 static void PrintExpression(const std::string_view filePrefix, const std::unique_ptr<Expression>& expression, size_t level);
 static void PrintParseResults(std::string_view filePrefix, const std::vector<std::unique_ptr<Statement>>& statements, size_t level = 0);
 
 int main(int argc, char* argv[])
 {
-	if (argc != 2)
+	if (argc == 1)
 	{
-		std::cerr << "Usage: " << argv[0] << " FILE\n";
-		std::cerr << "Expected 1 argument, got " << (argc - 1) << '\n';
+		return Repl();
+	}
+	else if (argc == 2)
+	{
+		return RunFile(argv[1]);
+	}
+	else
+	{
+		std::cerr << "Usage: " << argv[0] << " [FILE]\n"
+			<< "Omit the file to start REPL\n"
+			<< "Expected 0-1 arguments, got " << (argc - 1) << '\n';
 		return 1;
 	}
+}
 
-	const char* const filepath = argv[1];
-
+static int RunFile(const char* const filepath)
+{
 	std::string code;
 	if (!ReadFile(filepath, code))
 	{
@@ -49,6 +61,57 @@ int main(int argc, char* argv[])
 	// PrintParseResults(filepath, statements);
 
 	Interpret(filepath, statements);
+	return 0;
+}
+
+static int Repl()
+{
+	std::cout << "^C to exit\n";
+
+	std::vector<std::unique_ptr<Token>> tokens;
+	std::vector<std::unique_ptr<Statement>> statements;
+
+	bool continuation = false;
+	bool eof = false;
+
+	while (true)
+	{
+		std::cout << (continuation ? ". " : "> ");
+		std::string code;
+		std::getline(std::cin, code);
+
+		Error error = Lex(code.c_str(), tokens);
+		if (error)
+		{
+			std::cerr << "Lexer error at " << error.pos.line << ':' << error.pos.col << ": " << error.message << '\n';
+			continue;
+		}
+
+		eof = code == "";
+
+		statements.clear();
+		error = Parse(tokens, statements);
+		if (error)
+		{
+			if (eof)
+			{
+				std::cerr << "Parser error at " << error.pos.line << ':' << error.pos.col << ": " << error.message << '\n';
+				tokens.clear();
+				continuation = false;
+			}
+			else
+			{
+				tokens.pop_back(); // remove EOF token
+				continuation = true;
+			}
+		}
+		else
+		{
+			Interpret("", statements);
+			tokens.clear();
+			continuation = false;
+		}
+	}
 }
 
 static void PrintLexResults(const std::string_view filePrefix, const std::vector<std::unique_ptr<Token>>& tokens)
