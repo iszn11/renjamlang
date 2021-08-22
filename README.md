@@ -418,6 +418,8 @@ one of reserved keywords:
 * `while`
 * `xor`
 
+Identifier not assigned to a value in current scope will evaluate to void.
+
 **Call**
 
 `FUNCTION` is an expression that evaluates to a function. `ARGUMENTS` is any
