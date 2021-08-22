@@ -24,7 +24,8 @@ type in `x` in REPL to print the value, you will get this output:
 ```
 
 You get the comment with `$x` substituded for the actual value of `x` and the
-value of `x` below.
+value of `x` below. Go to the [bottom](#comments) if you want to know more about
+comments.
 
 Small example to try in REPL:
 
@@ -44,7 +45,7 @@ that is just a giant single line.
 
 # Building
 
-You need `g++`. Run `./build.sh` or run directly:
+You need `g++`. Run `./build.sh` or this:
 
 ```
 g++ -std=c++17 -pedantic -Wall -Wextra -g -o rjl Common.cpp Main.cpp Lexer.cpp Parser.cpp Interpreter.cpp
@@ -55,7 +56,7 @@ script in `FILE`.
 
 # Examples
 
-Examples available at [Example](./Examples) directory.
+Examples are available at [Example](./Examples) directory or below.
 
 ## Closures
 
@@ -384,8 +385,8 @@ end
 * `/ NUMBER NUMBER`
 * `% NUMBER NUMBER`
 * `and BOOL BOOL`
-* `or NUMBER NUMBER`
-* `xor NUMBER NUMBER`
+* `or BOOL BOOL`
+* `xor BOOL BOOL`
 * `< NUMBER NUMBER`
 * `> NUMBER NUMBER`
 * `<= NUMBER NUMBER`
@@ -447,7 +448,7 @@ this, simply type a comment before any expression (except call). For example:
 
 Note that while an array can have a comment attached, its elements cannot.
 
-The comments can propagate through operations under certain conditions.
+The comments can propagate through operations under certain conditions:
 
 * All unary operators copy comment of its operand to its result (unless the
   operation is preceeded by a comment, which then takes precedence).
