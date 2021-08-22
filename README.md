@@ -11,7 +11,7 @@ variables defined in the scope of a comment.
 Most of the syntax uses *Reverse RPN* (prefix notation), because ~~it's easier
 to parse and there's no operator precedence~~ it's superior and doesn't require
 parentheses. Comments are old C-style `/* This is a comment. */`, but can
-reference variables. For examples:
+reference variables. For example:
 
 `/* The value of x is $x. */ = x 10`
 
